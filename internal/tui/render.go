@@ -206,7 +206,7 @@ func (s Screen) Paint() string {
 	add(ruler)
 	footer := " [1] Overview [2] In [3] Out [4] Protocols [5] Transports [6] IP Clients [7] IP+Inbound [8] NGINX [f] Filter [q] Quit"
 	if inner < 100 {
-		footer = " [1]Home [2]In [3]Out [4]Proto [5]Trans [6]Clients [7]IPs [8]HTTP [f]Filter [q] Quit"
+		footer = " [1]Home [2]In [3]Out [4]Proto [5]Trans [6]IP [7]Tags [8]HTTP [f] [q]Quit"
 	}
 	add(footer)
 	if s.Color {
