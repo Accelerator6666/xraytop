@@ -4,7 +4,7 @@
 
 **XrayTop** 是一个用于 **Linux 本机 Xray-core** 的只读终端监控程序，支持按**代理协议**和**传输方式**独立查看统计信息。适合同时运行 VLESS + gRPC、VLESS + WebSocket、VLESS + XHTTP、VMess、Trojan 等入站的服务器；可识别 NGINX 反代后连接 Xray 的 Unix Socket 监听路径。
 
-> **v0.2.1-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每个用户的会话关联。**无需修改现有代理入站协议**。
+> **v0.3.0-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
 
 ## 工作原理
 
@@ -45,7 +45,7 @@ go build -o xraytop ./cmd/xraytop
 ./xraytop --once --config /usr/local/etc/xray/config.json --api ''
 ```
 
-**键盘操作：** `1` 总览、`2` 入站、`3` 出站、`4` 代理协议汇总、`5` 传输方式汇总；`Tab` 循环、`r` 刷新、`q` 退出。汇总视图会显示各分类的入站数量、拥有统计计数器的数量、上下行速率与累计流量。
+**键盘操作：** `1` 总览、`2` 入站、`3` 出站、`4` 代理协议汇总、`5` 传输方式汇总、`6` 在线用户及来源 IP；`Tab` 循环、`r` 刷新、`q` 退出。汇总视图会显示各分类的入站数量、拥有统计计数器的数量、上下行速率与累计流量。
 
 ## 启用实时流量监控
 
@@ -84,3 +84,32 @@ go vet ./...
 ```
 
 CI 自动测试，并交叉编译 Linux amd64/arm64。源代码见 [ARCHITECTURE.md](docs/ARCHITECTURE.md)。MIT License。
+
+
+## 在线用户和来源 IP（新增按键 `6`）
+
+`6` 打开在线用户/IP 视图。XrayTop 调用 **Xray 26.3.27** 已提供的 `statsgetallonlineusers` 和逐用户 `statsonlineiplist` 管理 API（每约 6 秒刷新在线列表）。不根据累计流量推断在线状态，不读取 UUID 或私钥。列表的 `email` 是 Xray 客户端配置的用户标识，须唯一、非空；多个用户使用同一 email 无法区分。
+
+需要将以下设置**合并**到已有 `policy.levels` 对应等级（下例为客户端默认 level 0）；现有 `stats`、`policy.system`、`api`、NGINX、Unix Socket 无需改动：
+
+```json
+"policy": {
+  "levels": {
+    "0": {
+      "statsUserOnline": true,
+      "statsUserUplink": true,
+      "statsUserDownlink": true
+    }
+  }
+}
+```
+
+不要覆盖已有策略，应按实际用户 level 合并。Xray 重启生效会造成短暂业务中断，先备份并运行配置测试。检查配置中标识数量（不显示秘密）：
+
+```bash
+jq '[.inbounds[]?.settings.clients[]? | select((.email // "") != "")] | length' /usr/local/etc/xray/config.json
+xray api statsgetallonlineusers --server=127.0.0.1:10085
+xray api statsonlineiplist --server=127.0.0.1:10085 --email='your-client-email'
+```
+
+**注意：** 列出的 IP 是 Xray 看到的来源地址，NGINX 反代可能隐藏真实客户端 IP；需要正确设置可信代理转发链。Xray 的在线图会忽略回环源 IP，出现“有流量、在线列表却为空”并不必然是故障。在线 IP 数不是 TCP 连接数。仅显示真实 API 数据，无法读取时会提示“未知”，绝不将近期活动用户误报为当前在线用户。

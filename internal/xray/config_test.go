@@ -95,3 +95,12 @@ func TestInvalidConfigReportsError(t *testing.T) {
 		t.Fatal("expected parse error")
 	}
 }
+
+func TestOnlinePolicyCatalog(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "online.json")
+	writeFixture(t, f, `{"policy":{"levels":{"0":{"statsUserOnline":true}}},"inbounds":[{"tag":"ws","protocol":"vless"}]}`)
+	cat, err := LoadCatalog([]string{f}, "")
+	if err != nil || !cat.OnlinePolicyConfigured {
+		t.Fatalf("catalog=%+v err=%v", cat, err)
+	}
+}

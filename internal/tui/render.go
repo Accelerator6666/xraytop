@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/Accelerator6666/xraytop/internal/collector"
@@ -100,6 +102,56 @@ func (s Screen) Paint() string {
 		add(s.style(" "+title+"  (all configured tags, plus stats-only tags)", bold))
 		add(endpointHeader(inner))
 		addEndpointRows(&lines, rows, max(1, height-len(lines)-4), inner, s.View == 1)
+	case 5:
+		add(s.style(" ONLINE USERS / SOURCE IP  (Xray live online map)", bold))
+		add(" User (client email)                         Source IP                 Last activity")
+		if !s.Snapshot.APIEnabled {
+			add(" StatsService disabled; user/IP data unavailable.")
+		} else if s.Snapshot.OnlineError != "" {
+			add(s.style(" Online API: "+s.Snapshot.OnlineError, yellow))
+		} else if len(s.Snapshot.Online.Users) == 0 {
+			add(" No Xray online-map entries. This does NOT prove no clients connected.")
+			if !s.Snapshot.Catalog.OnlinePolicyConfigured {
+				add(" Hint: enable policy.levels.<level>.statsUserOnline in Xray config.")
+			}
+			add(" Hint: assign a unique email to each Xray inbound client.")
+			add(" Reverse proxies must pass the real client IP to Xray.")
+		} else {
+			remaining := max(1, height-len(lines)-6)
+			count := 0
+			for _, user := range s.Snapshot.Online.Users {
+				for j, ip := range user.IPs {
+					if count >= remaining {
+						break
+					}
+					name := "  ↳"
+					if j == 0 {
+						name = safeUser(user.Email)
+					}
+					addr := ip.Address
+					if ip.IsLocal {
+						addr += " (proxy/local)"
+					}
+					age := "-"
+					if !ip.LastSeen.IsZero() {
+						ago := s.Snapshot.At.Sub(ip.LastSeen)
+						if ago < 0 {
+							ago = 0
+						}
+						age = fmt.Sprintf("%s (%s ago)", ip.LastSeen.Local().Format("15:04:05"), ago.Round(time.Second))
+					}
+					add(fmt.Sprintf(" %-40s %-28s %s", truncate(name, 40), truncate(addr, 28), age))
+					count++
+				}
+				if count >= remaining {
+					break
+				}
+			}
+			if s.Snapshot.Online.Failed > 0 || s.Snapshot.Online.Skipped > 0 {
+				add(fmt.Sprintf(" Partial data: %d per-user queries failed, %d users skipped", s.Snapshot.Online.Failed, s.Snapshot.Online.Skipped))
+			}
+			add(" Xray-reported source IP; reverse proxies may mask the real address.")
+		}
 	case 3, 4:
 		key, title := "protocol", "PROXY PROTOCOLS"
 		if s.View == 4 {
@@ -117,7 +169,7 @@ func (s Screen) Paint() string {
 		lines = lines[:height-2]
 	}
 	add(ruler)
-	add(" [1] Overview [2] In [3] Out [4] Protocols [5] Transports [q] Quit")
+	add(" [1] Overview [2] In [3] Out [4] Protocols [5] Transports [6] Users [q] Quit")
 	if s.Color {
 		return "\x1b[H" + strings.Join(lines, "\x1b[K\r\n") + "\x1b[J"
 	}
@@ -252,6 +304,20 @@ func spark(values []float64, width int) string {
 			n = 7
 		}
 		b.WriteRune([]rune(bars)[n])
+	}
+	return b.String()
+}
+
+// safeUser prevents control sequences in untrusted email metadata from being
+// interpreted as terminal commands. Only printable characters are displayed.
+func safeUser(email string) string {
+	var b strings.Builder
+	for _, r := range email {
+		if unicode.IsControl(r) || r == '\x1b' || r == '\u009b' {
+			b.WriteRune('?')
+			continue
+		}
+		b.WriteRune(r)
 	}
 	return b.String()
 }

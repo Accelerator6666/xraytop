@@ -16,6 +16,8 @@ type Snapshot struct {
 	CPU          float64
 	APIError     string
 	APIEnabled   bool
+	Online       xray.OnlineSnapshot
+	OnlineError  string
 	Traffic      xray.Breakdown
 	Catalog      xray.Catalog
 	ConfigError  string
@@ -31,6 +33,9 @@ type Collector struct {
 	sampler     xray.Sampler
 	previous    system.CPUSample
 	lastTraffic xray.Breakdown
+	onlineCache xray.OnlineSnapshot
+	onlineError string
+	nextOnline  time.Time
 }
 
 func (c *Collector) Sample(ctx context.Context) Snapshot {
@@ -94,6 +99,16 @@ func (c *Collector) Sample(ctx context.Context) Snapshot {
 			c.lastTraffic = snap.Traffic
 		}
 	}
+	if snap.APIEnabled && !now.Before(c.nextOnline) && ctx.Err() == nil {
+		online, err := c.Client.QueryOnline(ctx)
+		if err == nil {
+			c.onlineCache, c.onlineError = online, ""
+		} else {
+			c.onlineCache, c.onlineError = xray.OnlineSnapshot{}, err.Error()
+		}
+		c.nextOnline = time.Now().Add(6 * time.Second)
+	}
+	snap.Online, snap.OnlineError = c.onlineCache, c.onlineError
 	snap.Inbounds = xray.JoinEndpoints(snap.Catalog.Inbounds, snap.Traffic.Inbound)
 	snap.Outbounds = xray.JoinEndpoints(snap.Catalog.Outbounds, snap.Traffic.Outbound)
 	return snap

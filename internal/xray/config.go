@@ -22,8 +22,9 @@ type Endpoint struct {
 // Catalog describes the local, on-disk Xray configuration. It is best-effort:
 // a running instance may have been reconfigured since the file was loaded.
 type Catalog struct {
-	Inbounds, Outbounds []Endpoint
-	Source              string
+	Inbounds, Outbounds    []Endpoint
+	Source                 string
+	OnlinePolicyConfigured bool
 }
 
 type configEntry struct {
@@ -41,6 +42,11 @@ type configEntry struct {
 type configEnvelope struct {
 	Inbounds  []configEntry `json:"inbounds"`
 	Outbounds []configEntry `json:"outbounds"`
+	Policy    struct {
+		Levels map[string]struct {
+			StatsUserOnline bool `json:"statsUserOnline"`
+		} `json:"levels"`
+	} `json:"policy"`
 }
 
 // LoadCatalog merges descriptors from specified files and/or a confdir.
@@ -84,6 +90,11 @@ func LoadCatalog(files []string, confdir string) (Catalog, error) {
 		var doc configEnvelope
 		if err := json.Unmarshal(stripJSONComments(data), &doc); err != nil {
 			return cat, fmt.Errorf("parse config %q (JSON/JSONC required): %w", path, err)
+		}
+		for _, level := range doc.Policy.Levels {
+			if level.StatsUserOnline {
+				cat.OnlinePolicyConfigured = true
+			}
 		}
 		for _, entry := range doc.Inbounds {
 			cat.Inbounds = upsert(cat.Inbounds, descriptor(entry, true))

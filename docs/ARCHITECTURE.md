@@ -1,7 +1,7 @@
 # XrayTop architecture — local-only / multi-protocol
 
 ```
-XrayTop terminal view (overview / inbounds / outbounds / protocols / transports)
+XrayTop terminal view (overview / inbounds / outbounds / protocols / transports / online users)
          |
   Collector ------------- Linux procfs: xray PID, CPU, RSS, cmdline, cwd
          |                           |
@@ -41,7 +41,7 @@ Note that **API gRPC != inbound gRPC transport**: every type of proxy inbound ca
 - `JoinEndpoints` retains configured entries even when StatsService is disabled and retains stats-only tags with `Unknown` metadata. It never infers transport from naming conventions or network ports.
 - Aggregate by protocol or by transport is a **different grouping of the same inbound counters**. Do not add the group totals together or combine with outbounds.
 - Unix Socket metadata identifies the local Xray endpoint and does not reveal the client IP behind nginx. A future independent nginx log collector would be required for correlation.
-- Cumulative stats are deliberately not persisted or sampled when XrayTop exits. No user-level traffic in v0.2.
+- Cumulative stats are deliberately not persisted or sampled when XrayTop exits. v0.3 adds an online-user map view; user-level traffic rates remain a future feature.
 
 ## Roadmap
 
@@ -49,3 +49,15 @@ Note that **API gRPC != inbound gRPC transport**: every type of proxy inbound ca
 - Improve narrow terminal layouts, scrolling and additional port/listener details.
 - Implement optional nginx local access-log correlation as separate, clearly labeled observations without falsely equating connections and users.
 - Package binaries in tagged GitHub Releases; continue testing amd64 and arm64 via CI.
+
+
+## Online view
+
+The Xray 26.3.27 StatsService exposes `GetAllOnlineUsers` and `GetStatsOnlineIpList`.
+Every ~6 seconds the collector uses their Xray CLI wrappers to show the source
+IPs currently tracked by Xray, with the Unix `last_seen` timestamp. Bounded at
+64 users, 4 concurrent IP lookups. This requires a per-level statsUserOnline
+policy and unique client email labels; the application never changes config.
+Online IP data is **not** inferred from accumulated traffic, logs, or inbound
+TCP counts. Loopback-origin sources are not tracked by Xray's online map, and
+reverse proxies may hide the original IP.

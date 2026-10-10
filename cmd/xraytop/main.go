@@ -14,7 +14,7 @@ import (
 	"github.com/Accelerator6666/xraytop/internal/xray"
 )
 
-var version = "v0.2.1-dev"
+var version = "v0.3.0-dev"
 
 // configPaths supports repeated --config arguments for multi-file setups.
 type configPaths []string
