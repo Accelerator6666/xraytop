@@ -36,13 +36,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v0.10.0-dev"
+          TAG="v0.11.0-dev"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/xraytop-linux-amd64 dist/xraytop-linux-arm64 dist/SHA256SUMS --clobber
           else
             gh release create "$TAG" dist/xraytop-linux-amd64 dist/xraytop-linux-arm64 dist/SHA256SUMS \
               --target "$GITHUB_SHA" \
-              --title "XrayTop v0.10.0-dev" \
-              --notes "Private 24h source-IP history with minute snapshots, bounded atomic persistence, 5-60m TCP/Xray/HTTP trends, and interactive IP detail/sorting." \
+              --title "XrayTop v0.11.0-dev" \
+              --notes "Systemd-compatible headless collector and read-only snapshot viewer, avoiding duplicate history writes; fix MM-DD format in IP history." \
               --prerelease
           fi

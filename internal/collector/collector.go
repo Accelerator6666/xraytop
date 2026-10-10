@@ -19,6 +19,7 @@ type Snapshot struct {
 	APIEnabled   bool
 	IPHistory    []history.Summary
 	HistoryError string
+	DaemonError string
 	Recent       xray.RecentActivity
 	Live         xray.LiveTCP
 	Nginx        xray.NginxIngress

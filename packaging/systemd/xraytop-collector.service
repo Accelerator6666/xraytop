@@ -1,0 +1,32 @@
+[Unit]
+Description=XrayTop local source-IP history collector
+Documentation=https://github.com/Accelerator6666/xraytop
+Wants=xray.service
+After=xray.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+UMask=0077
+WorkingDirectory=/var/lib/xraytop
+StateDirectory=xraytop
+StateDirectoryMode=0700
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/local/bin/xraytop --daemon --interval 2s --config /usr/local/etc/xray/config.json --api 127.0.0.1:10085 --xray-bin /usr/local/bin/xray --snapshot-file /var/lib/xraytop/snapshot.json --history-file /var/lib/xraytop/ip-history.json
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=15s
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

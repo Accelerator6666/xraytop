@@ -85,10 +85,11 @@ func (s Screen) historyLines(width, maxLines int) []string {
         marker:=" "
         if i==index {marker=">"}
         trendWidth:=min(window,24)
+        if width<145 {trendWidth=min(trendWidth,max(1,width-104))}
         add(fmt.Sprintf("%s%-39s %-15s %-15s %4d %5d %5d %4d   %s",
             marker,truncate(row.IP,39),
-            row.FirstSeen.Local().Format("10-02 15:04"),
-            row.LastSeen.Local().Format("10-02 15:04"),
+            row.FirstSeen.Local().Format("01-02 15:04"),
+            row.LastSeen.Local().Format("01-02 15:04"),
             row.CurrentTCP,row.PeakTCP,row.LastXray,row.LastHTTP,
             historyTrend(row.Points,s.Snapshot.At,window,trendWidth,"tcp")))
     }

@@ -4,7 +4,7 @@
 
 **XrayTop** is a Linux-only, read-only terminal monitor for a **local Xray-core process**, with btop-inspired terminal views and protocol-aware inbound/outbound statistics. It supports mixed VLESS, VMess, Trojan, etc. configurations over WebSocket, gRPC, XHTTP, RAW/TCP, HTTPUpgrade, mKCP and more, including Unix-domain socket listeners behind nginx.
 
-> **v0.10.0-dev preview:** multi-protocol config discovery, process CPU/RSS, tagged inbound/outbound traffic, protocol and transport traffic aggregation, and terminal charts are implemented. Native gRPC client, nginx access-log correlation and per-user sessions are not implemented yet.
+> **v0.11.0-dev preview:** multi-protocol config discovery, process CPU/RSS, tagged inbound/outbound traffic, protocol and transport traffic aggregation, and terminal charts are implemented. Native gRPC client, nginx access-log correlation and per-user sessions are not implemented yet.
 
 ## How monitoring works
 
@@ -148,3 +148,15 @@ A blank/middle dot means no sample was taken; a zero bar means a sampled zero.
 Xray and NGINX counts are rolling 5-minute values at each snapshot, not
 per-minute new events. Do not sum them or infer authenticated session lifetime
 or a unique person from a public IP. History only accumulates while XrayTop runs.
+
+
+## v0.11: headless systemd collector and read-only viewer
+
+`--daemon` continuously samples into local atomic 0600 snapshots, protected
+by an exclusive file lock; `--data-source auto` (default) follows fresh
+daemon snapshots (15s maximum age), without redundant Xray/NGINX polling.
+`--data-source daemon` is strictly read-only, `local` forces foreground.
+Deploy `packaging/systemd/xraytop-collector.service` with a private systemd
+StateDirectory in `/var/lib/xraytop`, storing separate snapshot and history.
+This version fixes the history `MM-DD` date-format issue and clips trends to
+terminal width. No extra listener or exposed API is added.

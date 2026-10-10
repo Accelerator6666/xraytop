@@ -27,6 +27,7 @@ func TestHistoryViewListAndDetails(t *testing.T) {
     }}
     s:=Screen{Snapshot:snap,Width:160,Height:35,View:8,HistoryWindow:15}
     plain:=s.Paint()
+    if strings.Contains(plain,"100-10") || !strings.Contains(plain,"01-0") {t.Fatalf("history must show valid MM-DD, got: %s",plain)}
     for _,k:=range []string{"IP HISTORY","192.0.2.1","198.51.100.2","TCP trend","[Enter]","Quit"} {
         if !strings.Contains(plain,k) {t.Fatalf("missing %s: %s",k,plain)}
     }

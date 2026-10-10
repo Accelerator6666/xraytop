@@ -4,7 +4,7 @@
 
 **XrayTop** 是一个用于 **Linux 本机 Xray-core** 的只读终端监控程序，支持按**代理协议**和**传输方式**独立查看统计信息。适合同时运行 VLESS + gRPC、VLESS + WebSocket、VLESS + XHTTP、VMess、Trojan 等入站的服务器；可识别 NGINX 反代后连接 Xray 的 Unix Socket 监听路径。
 
-> **v0.10.0-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
+> **v0.11.0-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
 
 ## 工作原理
 
@@ -215,3 +215,26 @@ Xray 与 HTTP 是**当时最近 5 分钟的滚动事件数量**，不可跨分�
 首次发现/最后活动指 XrayTop 在此保留期内观察到该 IP 的时间，
 不证明该 IP 唯一对应某用户，也不能证明在线 VLESS 会话。
 历史只在 XrayTop 运行时积累；关闭后不会在后台独立收集。
+
+
+## v0.11：systemd 后台采集 / 前台只读查看
+
+v0.11 修复历史日期 `100-10` 的显示问题（现在正常显示 `10-10`），
+改善较窄终端的趋势列宽，并加入后台采集模式。
+
+`--daemon` 在无终端模式采样，每 2 秒原子发布一份本地状态快照（权限 0600），使用文件锁避免重复后台采集进程。
+`--data-source auto`（默认）在本机 `/var/lib/xraytop/snapshot.json` 不超过 15 秒时只读后台结果，不重复采集。
+`--data-source daemon` 严格只读后台，`--data-source local` 强制旧版本地采样。
+
+systemd 文件：`packaging/systemd/xraytop-collector.service`。安装后：
+
+```bash
+systemctl daemon-reload
+systemctl enable --now xraytop-collector
+systemctl status xraytop-collector --no-pager
+/usr/local/bin/xraytop --data-source daemon --once --once-view 9
+/usr/local/bin/xraytop
+```
+
+服务以 root 运行以便读取 Xray systemd journal、NGINX 配置和日志，`StateDirectory=xraytop` 会创建私有 `/var/lib/xraytop` 目录；其中历史和快照分别存储在 `ip-history.json` 与 `snapshot.json`。**不修改或重启 Xray、NGINX。**
+服务停止后，过期快照不会被当作实时数据。此前 `/root/.local/state/xraytop/ip-history.json` 不会自动迁移，如需保留，必须先停服务、备份后再人工迁移。历史采样依旧不代表已认证在线会话。

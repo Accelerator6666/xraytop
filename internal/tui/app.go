@@ -14,14 +14,15 @@ import (
 
 type App struct {
 	Collector *collector.Collector
+	Source func(context.Context) collector.Snapshot // daemon viewer; never collects or writes
 	Interval  time.Duration
 	NoColor   bool
 	ClientFilter string
 }
 
 func (a App) Run(ctx context.Context) error {
-	if a.Collector == nil {
-		return errors.New("nil collector")
+	if a.Collector == nil && a.Source == nil {
+		return errors.New("nil collector and snapshot source")
 	}
 	if !isTerminal(os.Stdin.Fd()) || !isTerminal(os.Stdout.Fd()) {
 		return errors.New("interactive mode requires a terminal (use --once for scripts)")
@@ -59,7 +60,8 @@ func (a App) Run(ctx context.Context) error {
 				return
 			case <-requests:
 				queryCtx, done := context.WithTimeout(ctx, 3*time.Second)
-				snap := a.Collector.Sample(queryCtx)
+				var snap collector.Snapshot
+				if a.Source != nil { snap=a.Source(queryCtx) } else { snap=a.Collector.Sample(queryCtx) }
 				done()
 				select {
 				case snaps <- snap:

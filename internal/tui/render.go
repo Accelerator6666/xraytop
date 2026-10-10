@@ -81,6 +81,9 @@ func (s Screen) Paint() string {
 	if s.Snapshot.ConfigError != "" {
 		add(s.style(" Config warning: "+s.Snapshot.ConfigError, yellow))
 	}
+	if s.Snapshot.DaemonError != "" {
+		add(s.style(" Daemon snapshot: "+s.Snapshot.DaemonError,yellow))
+	}
 	add(ruler)
 	switch s.View {
 	case 0:

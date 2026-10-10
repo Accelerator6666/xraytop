@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"os/signal"
+	"syscall"
+	"path/filepath"
 	"flag"
 	"fmt"
 	"os"
@@ -10,12 +13,13 @@ import (
 	"time"
 
 	"github.com/Accelerator6666/xraytop/internal/collector"
+	"github.com/Accelerator6666/xraytop/internal/daemon"
 	"github.com/Accelerator6666/xraytop/internal/history"
 	"github.com/Accelerator6666/xraytop/internal/tui"
 	"github.com/Accelerator6666/xraytop/internal/xray"
 )
 
-var version = "v0.10.0-dev"
+var version = "v0.11.0-dev"
 
 // configPaths supports repeated --config arguments for multi-file setups.
 type configPaths []string
@@ -40,6 +44,9 @@ func main() {
 	clientFilter := flag.String("clients-filter", "all", "source IP filter for view 6: all|xray|http|tcp (f cycles in the TUI)")
 	historyFile := flag.String("history-file", history.DefaultPath(), "local private 24h IP snapshot JSON file (empty disables history)")
 	noColor := flag.Bool("no-color", false, "disable ANSI colors")
+	daemonMode := flag.Bool("daemon", false, "run as the headless background snapshot collector")
+	dataSource := flag.String("data-source", "auto", "TUI data source: auto|local|daemon (daemon reads snapshots, never collects)")
+	snapshotFile := flag.String("snapshot-file", "/var/lib/xraytop/snapshot.json", "local daemon snapshot JSON path (0600)")
 	flag.Parse()
 	if *versionFlag {
 		fmt.Println("xraytop", version)
@@ -57,6 +64,11 @@ func main() {
 		fmt.Fprintln(os.Stderr, "--interval must be at least 1s")
 		os.Exit(2)
 	}
+	switch *dataSource {case "auto","local","daemon": default:
+		fmt.Fprintln(os.Stderr,"--data-source must be auto, local, or daemon");os.Exit(2)
+	}
+	if *daemonMode && *dataSource=="daemon" {fmt.Fprintln(os.Stderr,"--daemon cannot use --data-source daemon");os.Exit(2)}
+	if *snapshotFile=="" {fmt.Fprintln(os.Stderr,"--snapshot-file cannot be empty");os.Exit(2)}
 	switch *clientFilter {
 	case "all", "xray", "http", "tcp":
 	default:
@@ -65,23 +77,56 @@ func main() {
 	}
 	ports, err := xray.ParseIngressPorts(*portsFlag)
 	if err != nil { fmt.Fprintln(os.Stderr, "xraytop:", err); os.Exit(2) }
-	var historyStore *history.Store
-	if *historyFile != "" {
+
+	// A running systemd daemon is the single history writer; auto mode
+	// selects its snapshot when fresh, otherwise preserves old local behavior.
+	useDaemon := *dataSource=="daemon"
+	if *dataSource=="auto" && !*daemonMode {
+		if _,e:=daemon.Read(*snapshotFile); e==nil {useDaemon=true}
+	}
+	historyPath:=*historyFile
+	if *daemonMode || useDaemon {
+		// Explicit history-file always wins. Default viewer/daemon history is
+		// adjacent to the daemon's snapshot so both use the exact same store.
+		explicit:=false
+		flag.Visit(func(f *flag.Flag){if f.Name=="history-file" {explicit=true}})
+		if !explicit {historyPath=filepath.Join(filepath.Dir(*snapshotFile),"ip-history.json")}
+	}
+	var store *history.Store
+	if !useDaemon && historyPath!="" {
 		var e error
-		historyStore,e = history.Open(*historyFile)
+		store,e=history.Open(historyPath)
 		if e!=nil {fmt.Fprintln(os.Stderr,"xraytop: history:",e);os.Exit(1)}
 	}
-	c := &collector.Collector{Client: xray.Client{Binary: *binary, Server: *api}, ConfigFiles: configs, ConfigDir: *configDir, JournalUnit: *journal, IngressPorts: ports, NginxAuto: *nginxAuto, NginxAccessPath: *nginxAccess, HistoryStore: historyStore}
-	if *once {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		snap := c.Sample(ctx)
-		fmt.Print(tui.Screen{Snapshot: snap, Width: 100, Height: 24, View: *onceView - 1, ClientFilter: *clientFilter, Color: false}.Paint(), "\n")
+	var c *collector.Collector
+	if !useDaemon {
+		c=&collector.Collector{Client: xray.Client{Binary: *binary, Server: *api}, ConfigFiles: configs, ConfigDir: *configDir, JournalUnit: *journal, IngressPorts: ports, NginxAuto: *nginxAuto, NginxAccessPath: *nginxAccess, HistoryStore:store}
+	}
+	if *daemonMode {
+		ctx,stop:=signal.NotifyContext(context.Background(),syscall.SIGTERM,syscall.SIGINT)
+		defer stop()
+		if e:=daemon.Run(ctx,c,*snapshotFile,*interval);e!=nil {
+			fmt.Fprintln(os.Stderr,"xraytop daemon:",e)
+			os.Exit(1)
+		}
 		return
 	}
-	app := tui.App{Collector: c, Interval: *interval, ClientFilter: *clientFilter, NoColor: *noColor || os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb"}
-	if err := app.Run(context.Background()); err != nil {
-		fmt.Fprintln(os.Stderr, "xraytop:", err)
+	var source func(context.Context) collector.Snapshot
+	if useDaemon {
+		f:=&daemon.Follow{SnapshotPath:*snapshotFile,HistoryPath:historyPath}
+		source=f.Sample
+	}
+	if *once {
+		ctx,cancel:=context.WithTimeout(context.Background(),3*time.Second)
+		defer cancel()
+		var snap collector.Snapshot
+		if source!=nil {snap=source(ctx)} else {snap=c.Sample(ctx)}
+		fmt.Print(tui.Screen{Snapshot:snap,Width:100,Height:24,View:*onceView-1,ClientFilter:*clientFilter,Color:false}.Paint(),"\n")
+		return
+	}
+	app:=tui.App{Collector:c,Source:source,Interval:*interval,ClientFilter:*clientFilter,NoColor:*noColor||os.Getenv("NO_COLOR")!=""||os.Getenv("TERM")=="dumb"}
+	if err:=app.Run(context.Background());err!=nil {
+		fmt.Fprintln(os.Stderr,"xraytop:",err)
 		os.Exit(1)
 	}
 }
