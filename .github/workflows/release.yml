@@ -36,13 +36,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v0.6.0-dev"
+          TAG="v0.7.0-dev"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/xraytop-linux-amd64 dist/xraytop-linux-arm64 dist/SHA256SUMS --clobber
           else
             gh release create "$TAG" dist/xraytop-linux-amd64 dist/xraytop-linux-arm64 dist/SHA256SUMS \
               --target "$GITHUB_SHA" \
               --title "XrayTop v0.6.0-dev" \
-              --notes "Optional TCP ESTABLISHED socket observations for explicitly selected ingress ports; IP-keyed journal correlation, without confusing TCP sockets with authenticated Xray sessions." \
+              --notes "Auto-discover NGINX listener ports by matching exact proxy targets to local Xray inbounds, including Unix sockets. Manual port override preserved." \
               --prerelease
           fi

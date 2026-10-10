@@ -72,3 +72,8 @@ The `6` Users view and `7` Recent IP view are deliberately separate: Xray's onli
 ## Optional live TCP observations
 
 Linux host procfs `/proc/net/tcp` and `/proc/net/tcp6` provide ESTABLISHED sockets, filtered only by explicit `--ingress-ports`. This network-level view is joined to recent accepted journal records on normalized IP for convenience, not authenticated user identity. Reading is local and does not require an Xray config change. IPv6 procfs entries require little-endian decoding per 32-bit word. Peer socket counts must never be presented as authenticated Xray user sessions or exact per-inbound connections.
+
+
+## NGINX reverse-proxy port discovery (v0.7)
+
+The default local-only auto-discovery calls `nginx -T` (read-only) every ~60s, parses brace-scoped `server`, `location`, `listen`, `upstream`, `server`, `proxy_pass` and `grpc_pass` directives. Exact backend matches against the current Xray Catalog's Unix-domain socket and loopback listener endpoints yield monitored TCP ingress ports and corresponding Xray inbound tags. A port can map to more than one inbound. Nonmatching web-only server blocks are excluded. Manual `--ingress-ports` overrides auto discovery and `--nginx-auto=false` disables it. Configuration matches are not proof of per-socket authentication or valid source-IP forwarding.

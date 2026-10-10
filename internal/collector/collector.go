@@ -18,6 +18,8 @@ type Snapshot struct {
 	APIEnabled   bool
 	Recent       xray.RecentActivity
 	Live         xray.LiveTCP
+	Nginx        xray.NginxIngress
+	NginxError   string
 	LiveError    string
 	RecentError  string
 	Traffic      xray.Breakdown
@@ -34,6 +36,10 @@ type Collector struct {
 	Client      xray.Client
 	JournalUnit string
 	IngressPorts []uint16
+	NginxAuto bool
+	nginxCache xray.NginxIngress
+	nginxError string
+	nextNginx time.Time
 	sampler     xray.Sampler
 	previous    system.CPUSample
 	lastTraffic xray.Breakdown
@@ -115,10 +121,25 @@ func (c *Collector) Sample(ctx context.Context) Snapshot {
 		c.nextRecent = time.Now().Add(10 * time.Second)
 	}
 	snap.Recent, snap.RecentError = c.recentCache, c.recentError
-	// Network socket evidence is independent of Xray StatsService/journal data.
-	// Enumerate only ingress ports explicitly selected by the operator.
-	if len(c.IngressPorts) > 0 {
-		snap.Live, err = xray.ReadLiveTCP(root, c.IngressPorts)
+	// Manual ports override discovery. Auto mode matches NGINX reverse-proxy
+	// targets to Xray's configured inbound listen endpoints. Unknown upstreams
+	// and unrelated HTTPS servers are never included automatically.
+	ports := c.IngressPorts
+	if c.NginxAuto && len(ports) == 0 {
+		if !now.Before(c.nextNginx) && ctx.Err() == nil {
+			nginx, e := xray.DiscoverNginxIngress(ctx, snap.Catalog)
+			if e != nil {
+				c.nginxCache, c.nginxError = xray.NginxIngress{}, e.Error()
+			} else {
+				c.nginxCache, c.nginxError = nginx, ""
+			}
+			c.nextNginx = time.Now().Add(60 * time.Second)
+		}
+		ports = c.nginxCache.Ports
+		snap.Nginx, snap.NginxError = c.nginxCache, c.nginxError
+	}
+	if len(ports) > 0 {
+		snap.Live, err = xray.ReadLiveTCP(root, ports)
 		if err != nil { snap.LiveError = err.Error() }
 	}
 	snap.Inbounds = xray.JoinEndpoints(snap.Catalog.Inbounds, snap.Traffic.Inbound)

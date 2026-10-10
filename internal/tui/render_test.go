@@ -64,6 +64,12 @@ func TestIPFirstClientsView(t *testing.T) {
 	}
 }
 
+func TestNGINXAutoStatus(t *testing.T) {
+	snap := collector.Snapshot{At:time.Unix(100,0), Nginx:xray.NginxIngress{CheckedAt:time.Unix(100,0), Ports:[]uint16{1443,2443}, Routes:[]xray.NginxRoute{{Port:1443,Inbound:"vless-grpc"},{Port:2443,Inbound:"vless-grpc"}}}}
+	out := (Screen{Width:130,Height:24,View:5,Snapshot:snap}).Paint()
+	if !strings.Contains(out,"NGINX auto: 2 verified proxy ports / 2 Xray inbound routes") { t.Fatalf("missing auto detection: %s",out) }
+}
+
 func TestRecentSourceView(t *testing.T) {
 	snapshot := collector.Snapshot{At: time.Unix(1791602300, 0), Recent: xray.RecentActivity{
 		CheckedAt: time.Unix(1791602300, 0), Events: 3,

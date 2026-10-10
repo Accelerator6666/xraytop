@@ -4,7 +4,7 @@
 
 **XrayTop** is a Linux-only, read-only terminal monitor for a **local Xray-core process**, with btop-inspired terminal views and protocol-aware inbound/outbound statistics. It supports mixed VLESS, VMess, Trojan, etc. configurations over WebSocket, gRPC, XHTTP, RAW/TCP, HTTPUpgrade, mKCP and more, including Unix-domain socket listeners behind nginx.
 
-> **v0.6.0-dev preview:** multi-protocol config discovery, process CPU/RSS, tagged inbound/outbound traffic, protocol and transport traffic aggregation, and terminal charts are implemented. Native gRPC client, nginx access-log correlation and per-user sessions are not implemented yet.
+> **v0.7.0-dev preview:** multi-protocol config discovery, process CPU/RSS, tagged inbound/outbound traffic, protocol and transport traffic aggregation, and terminal charts are implemented. Native gRPC client, nginx access-log correlation and per-user sessions are not implemented yet.
 
 ## How monitoring works
 
@@ -96,3 +96,26 @@ counters can be calculated from standard tagged StatsService totals.
 Pass `--ingress-ports 443,8964` using **your actual** local NGINX/Xray ingress ports to observe Linux ESTABLISHED TCP peers on those ports. View `6` merges those peers by IP with accepted Xray journal events from the past 5 minutes; view `7` adds an IP-level TCP count. Without the flag there is no live socket enumeration.
 
 **Important:** An ESTABLISHED TCP socket on an ingress port is not proof of an authenticated Xray user/session or an active proxy request. Shared HTTPS, CDN, NAT, multiplexing, and reverse proxies may produce different peer IPs than the Xray access logs. Do not treat the counts as authenticated sessions or per-user bandwidth.
+
+
+## Automatic NGINX ingress discovery (v0.7)
+
+By default XrayTop calls local `nginx -T` and matches configured
+`grpc_pass`/`proxy_pass` targets to exact Xray inbound Unix socket or loopback
+listen endpoints. It follows named NGINX upstreams and includes **only matching**
+listener ports. Results are cached for 60 seconds; no NGINX reload occurs.
+NGINX HTTP(S) ports may carry unrelated site traffic, so TCP counts remain
+**network-level only**, never authenticated Xray sessions.
+
+```bash
+./xraytop --config /usr/local/etc/xray/config.json
+./xraytop --once --once-view 6 --config /usr/local/etc/xray/config.json
+# Override automatic selection:
+./xraytop --ingress-ports 1443,2443
+# Disable automatic TCP discovery:
+./xraytop --nginx-auto=false
+```
+
+When the active configuration cannot be read or proxy backends do not match
+configured Xray inbound listeners, the program shows a warning and does not
+guess port mappings.

@@ -104,9 +104,13 @@ func (s Screen) Paint() string {
 	case 5:
 		add(s.style(" CLIENTS BY SOURCE IP  (TCP sockets + recent Xray accepted events)", bold))
 		add(" Source IP                                TCP    Accepted   Inbounds / transports             Last seen")
+		if !s.Snapshot.Nginx.CheckedAt.IsZero() {
+			add(fmt.Sprintf(" NGINX auto: %d verified proxy ports / %d Xray inbound routes", len(s.Snapshot.Nginx.Ports), len(s.Snapshot.Nginx.Routes)))
+		}
+		if s.Snapshot.NginxError != "" { add(s.style(" NGINX discovery: "+s.Snapshot.NginxError, yellow)) }
 		if s.Snapshot.LiveError != "" { add(s.style(" TCP warning: "+s.Snapshot.LiveError,yellow)) }
 		if s.Snapshot.RecentError != "" { add(s.style(" Journal warning: "+s.Snapshot.RecentError,yellow)) }
-		if len(s.Snapshot.Live.Ports)==0 { add(" Live TCP disabled: pass --ingress-ports <port1,port2> for NGINX ingress sockets.") }
+		if len(s.Snapshot.Live.Ports)==0 { add(" No TCP ingress ports selected. Check NGINX auto discovery or use --ingress-ports.") }
 		clients:=xray.MergeObservedClients(s.Snapshot.Recent.Sources,s.Snapshot.Catalog,s.Snapshot.Live)
 		if len(clients)==0 {
 			add(" No observed source IPs. A missing record does not prove a client is offline.")

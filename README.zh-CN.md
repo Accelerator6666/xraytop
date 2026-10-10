@@ -4,7 +4,7 @@
 
 **XrayTop** 是一个用于 **Linux 本机 Xray-core** 的只读终端监控程序，支持按**代理协议**和**传输方式**独立查看统计信息。适合同时运行 VLESS + gRPC、VLESS + WebSocket、VLESS + XHTTP、VMess、Trojan 等入站的服务器；可识别 NGINX 反代后连接 Xray 的 Unix Socket 监听路径。
 
-> **v0.6.0-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
+> **v0.7.0-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
 
 ## 工作原理
 
@@ -131,3 +131,27 @@ journalctl -u xray --since '5 minutes ago' --no-pager | grep ' accepted ' | tail
 - 无需客户端 `email`、不启用额外服务或端口，也不修改 Xray 配置。
 
 **限制**：入口的 TCP 连接数量不等于通过 Xray 认证的客户端数量。尤其 NGINX 同时承载网站、HTTP/2、WebSocket 与 gRPC 时，不能可靠地根据一个 TCP socket 推断它属于哪个 VLESS 用户或 Inbound。NAT/CDN/反代还可能导致 NGINX 见到的 IP 与 Xray 日志中的来源不同。按 IP 分组并不是严格的用户身份识别，也不能由此计算每 IP 的准确流量。
+
+
+## NGINX 入口端口自动发现（v0.7）
+
+默认运行时，XrayTop 每约 60 秒使用本机 `nginx -T` 读取实际生效的
+NGINX 配置，根据 `server`/ `listen`/ `proxy_pass`/ `grpc_pass`
+以及命名 upstream 的后端地址进行匹配。**只有后端与 Xray 配置中的
+Unix Socket 或回环 TCP 入站监听地址准确匹配，才会加入 TCP 采样端口**。
+不会猜测端口，也不会更改或重新加载 NGINX。页面 6 提供自动识别状态。
+
+```bash
+# 自动发现（默认）：不必再手动输入 15 个端口
+./xraytop --config /usr/local/etc/xray/config.json --api 127.0.0.1:10085
+# 无需全屏，直接检查第 6 页
+./xraytop --once --once-view 6 --config /usr/local/etc/xray/config.json
+# 特殊情况手动覆盖自动识别
+./xraytop --ingress-ports 1443,2443
+# 关闭 NGINX 自动识别
+./xraytop --nginx-auto=false
+```
+
+注意：若 NGINX 同时承载普通 HTTPS，检测到的 TCP 连接仍可能是网站访客，
+并不能直接当作已认证的 Xray 用户；一个端口也可能承载多种入站协议。
+自动发现无法读取或无法准确匹配的情况会显示警告，而不会盲目纳入端口。
