@@ -34,23 +34,30 @@ func TestProtocolAndTransportViews(t *testing.T) {
 	}
 }
 
-func TestOnlineUsersView(t *testing.T) {
-	at := time.Unix(1791592000, 0)
-	snap := collector.Snapshot{At: at, APIEnabled: true, Online: xray.OnlineSnapshot{
-		CheckedAt: at,
-		Users:     []xray.OnlineUser{{Email: "alice@example.com", IPs: []xray.OnlineIP{{Address: "112.82.222.50", LastSeen: at.Add(-5 * time.Second)}}}},
-	}}
-	output := Screen{Width: 110, Height: 20, View: 5, Snapshot: snap}.Paint()
-	for _, want := range []string{"ONLINE USERS", "alice@example.com", "112.82.222.50", "5s ago", "[6] Users"} {
+func TestIPFirstClientsView(t *testing.T) {
+	at := time.Unix(1791602300, 0)
+	snap := collector.Snapshot{At: at, Recent: xray.RecentActivity{
+		CheckedAt: at, Events: 6,
+		Sources: []xray.RecentSource{
+			{IP: "192.0.2.1", Inbound: "vless-ws", Accepted: 4, FirstSeen: at.Add(-80 * time.Second), LastSeen: at.Add(-7 * time.Second)},
+			{IP: "192.0.2.1", Inbound: "vless-grpc", Accepted: 2, FirstSeen: at.Add(-60 * time.Second), LastSeen: at.Add(-6 * time.Second)},
+		},
+	}, Catalog: xray.Catalog{Inbounds: []xray.Endpoint{
+		{Tag: "vless-ws", Transport: "WebSocket"}, {Tag: "vless-grpc", Transport: "gRPC"},
+	}}}
+	output := Screen{Width: 130, Height: 24, View: 5, Snapshot: snap}.Paint()
+	for _, want := range []string{"CLIENT SOURCE IP", "192.0.2.1", "WebSocket,gRPC", "6s", "[6] Clients", "NOT online status"} {
 		if !strings.Contains(output, want) {
-			t.Errorf("expected %q in output: %s", want, output)
+			t.Errorf("expected %q: %s", want, output)
 		}
 	}
-	snap.Online = xray.OnlineSnapshot{}
-	snap.Catalog.OnlinePolicyConfigured = false
-	output = Screen{Width: 110, Height: 20, View: 5, Snapshot: snap}.Paint()
-	if !strings.Contains(output, "statsUserOnline") {
-		t.Error("missing policy guidance")
+	if strings.Contains(output, "email") || strings.Contains(output, "statsUserOnline") {
+		t.Fatalf("email tracking leaked into IP-first view: %s", output)
+	}
+	snap.Recent = xray.RecentActivity{CheckedAt: at}
+	output = Screen{Width: 100, Height: 20, View: 5, Snapshot: snap}.Paint()
+	if !strings.Contains(output, "does NOT prove") {
+		t.Error("missing empty journal caveat")
 	}
 	if safeUser("alice\x1b[31m") == "alice\x1b[31m" {
 		t.Fatal("unsafe escape preserved")
@@ -63,7 +70,7 @@ func TestRecentSourceView(t *testing.T) {
 		Sources: []xray.RecentSource{{IP: "192.0.2.5", Inbound: "vless-ws", Accepted: 3, LastSeen: time.Unix(1791602211, 0)}},
 	}}
 	out := (Screen{Width: 110, Height: 24, View: 6, Snapshot: snapshot}).Paint()
-	for _, want := range []string{"RECENT ACCEPTED", "192.0.2.5", "vless-ws", "NOT live sessions"} {
+	for _, want := range []string{"SOURCE IP + INBOUND", "192.0.2.5", "vless-ws", "NOT online status"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q: %s", want, out)
 		}

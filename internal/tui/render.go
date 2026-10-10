@@ -102,16 +102,48 @@ func (s Screen) Paint() string {
 		add(s.style(" "+title+"  (all configured tags, plus stats-only tags)", bold))
 		add(endpointHeader(inner))
 		addEndpointRows(&lines, rows, max(1, height-len(lines)-4), inner, s.View == 1)
-	case 6:
-		add(s.style(" RECENT ACCEPTED SOURCE IPs  (last 5 minutes; NOT live sessions)", bold))
-		add(" Observed IP                              Inbound tag                     Accepted   Last seen")
+	case 5:
+		add(s.style(" CLIENT SOURCE IPs  (5-minute accepted activity; NOT online status)", bold))
+		add(" Source IP                               Transports                 Events   Last seen   Age")
 		if s.Snapshot.RecentError != "" {
 			add(s.style(" Journal: "+s.Snapshot.RecentError, yellow))
 		} else if s.Snapshot.Recent.CheckedAt.IsZero() {
-			add(" Recent-source journal collector disabled or waiting for first sample.")
+			add(" Journal IP collector disabled or waiting for first sample.")
+		} else {
+			clients := xray.GroupSourcesByIP(s.Snapshot.Recent.Sources, s.Snapshot.Catalog)
+			if len(clients) == 0 {
+				add(" No accepted connection entries in the available 5-minute journal window.")
+				add(" This does NOT prove no clients are currently connected.")
+			} else {
+				limit := max(1, height-len(lines)-6)
+				for i, client := range clients {
+					if i >= limit {
+						break
+					}
+					tr := strings.Join(client.Transports, ",")
+					if tr == "" {
+						tr = "Unknown"
+					}
+					age := s.Snapshot.At.Sub(client.LastSeen)
+					if age < 0 {
+						age = 0
+					}
+					add(fmt.Sprintf(" %-39s %-24s %6d   %s   %s", truncate(client.IP, 39), truncate(tr, 24), client.Accepted, client.LastSeen.Local().Format("15:04:05"), age.Round(time.Second)))
+				}
+				add(fmt.Sprintf(" %d source IPs observed / %d accepted events (journal, up to 500 lines)", len(clients), s.Snapshot.Recent.Events))
+			}
+		}
+		add(" IP is a grouping key, NOT a unique user identity. NAT and proxy headers can affect it.")
+	case 6:
+		add(s.style(" SOURCE IP + INBOUND  (5-minute accepted activity; NOT online status)", bold))
+		add(" Source IP                                Inbound tag                     Events   Last seen")
+		if s.Snapshot.RecentError != "" {
+			add(s.style(" Journal: "+s.Snapshot.RecentError, yellow))
+		} else if s.Snapshot.Recent.CheckedAt.IsZero() {
+			add(" Journal source-IP collector disabled or waiting for first sample.")
 		} else if len(s.Snapshot.Recent.Sources) == 0 {
 			add(" No recent accepted log entries. This does NOT prove no clients connected.")
-			add(" Enable Xray access logs in journald or pass --journal-unit <unit>.")
+			add(" Check journalctl -u xray, or use --journal-unit <unit>.")
 		} else {
 			for i, row := range s.Snapshot.Recent.Sources {
 				if i >= max(1, height-len(lines)-5) {
@@ -119,58 +151,8 @@ func (s Screen) Paint() string {
 				}
 				add(fmt.Sprintf(" %-40s %-30s %8d   %s", truncate(row.IP, 40), truncate(row.Inbound, 30), row.Accepted, row.LastSeen.Local().Format("15:04:05")))
 			}
-			add(fmt.Sprintf(" %d accepted events / %d source+inbound groups (journal, last 5m)", s.Snapshot.Recent.Events, len(s.Snapshot.Recent.Sources)))
-			add(" Recent activity is not online status; a single IP may represent multiple users.")
-		}
-	case 5:
-		add(s.style(" ONLINE USERS / SOURCE IP  (Xray live online map)", bold))
-		add(" User (client email)                         Source IP                 Last activity")
-		if !s.Snapshot.APIEnabled {
-			add(" StatsService disabled; user/IP data unavailable.")
-		} else if s.Snapshot.OnlineError != "" {
-			add(s.style(" Online API: "+s.Snapshot.OnlineError, yellow))
-		} else if len(s.Snapshot.Online.Users) == 0 {
-			add(" No Xray online-map entries. This does NOT prove no clients connected.")
-			if !s.Snapshot.Catalog.OnlinePolicyConfigured {
-				add(" Hint: enable policy.levels.<level>.statsUserOnline in Xray config.")
-			}
-			add(" Hint: assign a unique email to each Xray inbound client.")
-			add(" Reverse proxies must pass the real client IP to Xray.")
-		} else {
-			remaining := max(1, height-len(lines)-6)
-			count := 0
-			for _, user := range s.Snapshot.Online.Users {
-				for j, ip := range user.IPs {
-					if count >= remaining {
-						break
-					}
-					name := "  ↳"
-					if j == 0 {
-						name = safeUser(user.Email)
-					}
-					addr := ip.Address
-					if ip.IsLocal {
-						addr += " (proxy/local)"
-					}
-					age := "-"
-					if !ip.LastSeen.IsZero() {
-						ago := s.Snapshot.At.Sub(ip.LastSeen)
-						if ago < 0 {
-							ago = 0
-						}
-						age = fmt.Sprintf("%s (%s ago)", ip.LastSeen.Local().Format("15:04:05"), ago.Round(time.Second))
-					}
-					add(fmt.Sprintf(" %-40s %-28s %s", truncate(name, 40), truncate(addr, 28), age))
-					count++
-				}
-				if count >= remaining {
-					break
-				}
-			}
-			if s.Snapshot.Online.Failed > 0 || s.Snapshot.Online.Skipped > 0 {
-				add(fmt.Sprintf(" Partial data: %d per-user queries failed, %d users skipped", s.Snapshot.Online.Failed, s.Snapshot.Online.Skipped))
-			}
-			add(" Xray-reported source IP; reverse proxies may mask the real address.")
+			add(fmt.Sprintf(" %d accepted events / %d IP+inbound groups (last 5m)", s.Snapshot.Recent.Events, len(s.Snapshot.Recent.Sources)))
+			add(" Journal evidence only; accepted events do not prove currently live sessions.")
 		}
 	case 3, 4:
 		key, title := "protocol", "PROXY PROTOCOLS"
@@ -189,9 +171,9 @@ func (s Screen) Paint() string {
 		lines = lines[:height-2]
 	}
 	add(ruler)
-	footer := " [1] Overview [2] In [3] Out [4] Protocols [5] Transports [6] Users [7] Recent IPs [q] Quit"
+	footer := " [1] Overview [2] In [3] Out [4] Protocols [5] Transports [6] Clients [7] IP+Inbound [q] Quit"
 	if inner < 100 {
-		footer = " [1]Home [2]In [3]Out [4]Proto [5]Trans [6]Users [7]IPs [q] Quit"
+		footer = " [1]Home [2]In [3]Out [4]Proto [5]Trans [6]Clients [7]IPs [q] Quit"
 	}
 	add(footer)
 	if s.Color {

@@ -14,7 +14,7 @@ import (
 	"github.com/Accelerator6666/xraytop/internal/xray"
 )
 
-var version = "v0.4.0-dev"
+var version = "v0.5.0-dev"
 
 // configPaths supports repeated --config arguments for multi-file setups.
 type configPaths []string
@@ -31,7 +31,7 @@ func main() {
 	binary := flag.String("xray-bin", "xray", "path to xray executable used for statsquery")
 	interval := flag.Duration("interval", 2*time.Second, "monitor polling interval (minimum 1s)")
 	once := flag.Bool("once", false, "print one plain snapshot and exit")
-	onceView := flag.Int("once-view", 1, "view number used with --once (1-7)")
+	onceView := flag.Int("once-view", 1, "view number used with --once (1-7; 6=source IPs, 7=IP+inbound)")
 	journal := flag.String("journal-unit", "xray", "systemd unit for recent accepted source-IP records (empty disables)")
 	noColor := flag.Bool("no-color", false, "disable ANSI colors")
 	flag.Parse()

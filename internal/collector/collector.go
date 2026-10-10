@@ -16,8 +16,6 @@ type Snapshot struct {
 	CPU          float64
 	APIError     string
 	APIEnabled   bool
-	Online       xray.OnlineSnapshot
-	OnlineError  string
 	Recent       xray.RecentActivity
 	RecentError  string
 	Traffic      xray.Breakdown
@@ -36,9 +34,6 @@ type Collector struct {
 	sampler     xray.Sampler
 	previous    system.CPUSample
 	lastTraffic xray.Breakdown
-	onlineCache xray.OnlineSnapshot
-	onlineError string
-	nextOnline  time.Time
 	recentCache xray.RecentActivity
 	recentError string
 	nextRecent  time.Time
@@ -105,16 +100,8 @@ func (c *Collector) Sample(ctx context.Context) Snapshot {
 			c.lastTraffic = snap.Traffic
 		}
 	}
-	if snap.APIEnabled && !now.Before(c.nextOnline) && ctx.Err() == nil {
-		online, err := c.Client.QueryOnline(ctx)
-		if err == nil {
-			c.onlineCache, c.onlineError = online, ""
-		} else {
-			c.onlineCache, c.onlineError = xray.OnlineSnapshot{}, err.Error()
-		}
-		c.nextOnline = time.Now().Add(6 * time.Second)
-	}
-	snap.Online, snap.OnlineError = c.onlineCache, c.onlineError
+	// IP-first monitoring needs no user email and does not query online-user RPCs.
+	// The source-IP journal cache refreshes independently of StatsService.
 	if c.JournalUnit != "" && !now.Before(c.nextRecent) && ctx.Err() == nil {
 		recent, err := xray.ReadRecentActivity(ctx, c.JournalUnit)
 		if err == nil {

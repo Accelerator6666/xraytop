@@ -17,10 +17,11 @@ import (
 // RecentSource is evidence of recently accepted traffic, NOT a currently
 // connected session and NOT a confirmed user identity.
 type RecentSource struct {
-	IP       string
-	Inbound  string
-	Accepted int
-	LastSeen time.Time
+	IP        string
+	Inbound   string
+	Accepted  int
+	FirstSeen time.Time
+	LastSeen  time.Time
 }
 
 type RecentActivity struct {
@@ -125,11 +126,14 @@ func ParseRecentActivity(output []byte) ([]RecentSource, int) {
 		seen := time.Unix(int64(stamp), int64((stamp-float64(int64(stamp)))*1e9))
 		if e, ok := grouped[key]; ok {
 			e.Accepted++
+			if e.FirstSeen.IsZero() || seen.Before(e.FirstSeen) {
+				e.FirstSeen = seen
+			}
 			if seen.After(e.LastSeen) {
 				e.LastSeen = seen
 			}
 		} else {
-			grouped[key] = &RecentSource{IP: ip.String(), Inbound: tag, Accepted: 1, LastSeen: seen}
+			grouped[key] = &RecentSource{IP: ip.String(), Inbound: tag, Accepted: 1, FirstSeen: seen, LastSeen: seen}
 		}
 		events++
 	}

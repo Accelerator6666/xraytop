@@ -4,7 +4,7 @@
 
 **XrayTop** 是一个用于 **Linux 本机 Xray-core** 的只读终端监控程序，支持按**代理协议**和**传输方式**独立查看统计信息。适合同时运行 VLESS + gRPC、VLESS + WebSocket、VLESS + XHTTP、VMess、Trojan 等入站的服务器；可识别 NGINX 反代后连接 Xray 的 Unix Socket 监听路径。
 
-> **v0.4.0-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
+> **v0.5.0-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
 
 ## 工作原理
 
@@ -45,7 +45,7 @@ go build -o xraytop ./cmd/xraytop
 ./xraytop --once --config /usr/local/etc/xray/config.json --api ''
 ```
 
-**键盘操作：** `1` 总览、`2` 入站、`3` 出站、`4` 代理协议汇总、`5` 传输方式汇总、`6` 在线用户及来源 IP；`Tab` 循环、`r` 刷新、`q` 退出。汇总视图会显示各分类的入站数量、拥有统计计数器的数量、上下行速率与累计流量。
+**键盘操作：** `1` 总览、`2` 入站、`3` 出站、`4` 代理协议汇总、`5` 传输方式汇总、`6` 客户端来源 IP 汇总；`Tab` 循环、`r` 刷新、`q` 退出。汇总视图会显示各分类的入站数量、拥有统计计数器的数量、上下行速率与累计流量。
 
 ## 启用实时流量监控
 
@@ -53,7 +53,7 @@ go build -o xraytop ./cmd/xraytop
 
 - `api.services` 包含 `StatsService`，并确保有本地 API 入站以及指向 `api` 出站的路由；
 - `stats: {}` 和 `policy.system.statsInboundUplink/statsInboundDownlink/statsOutboundUplink/statsOutboundDownlink: true`；
-- 若需要用户级统计，还需要相应 `policy.levels` 和客户 `email`（`6` 页面使用在线用户列表）。
+- IP 优先模式不要求客户 `email` 或 `statsUserOnline`，它只从本机日志获取 IP 的最近接受记录。
 
 验证：
 
@@ -86,53 +86,32 @@ go vet ./...
 CI 自动测试，并交叉编译 Linux amd64/arm64。源代码见 [ARCHITECTURE.md](docs/ARCHITECTURE.md)。MIT License。
 
 
-## 在线用户和来源 IP（新增按键 `6`）
+## IP 优先客户端监控（按键 `6` 和 `7`）
 
-`6` 打开在线用户/IP 视图。XrayTop 调用 **Xray 26.3.27** 已提供的 `statsgetallonlineusers` 和逐用户 `statsonlineiplist` 管理 API（每约 6 秒刷新在线列表）。不根据累计流量推断在线状态，不读取 UUID 或私钥。列表的 `email` 是 Xray 客户端配置的用户标识，须唯一、非空；多个用户使用同一 email 无法区分。
-
-需要将以下设置**合并**到已有 `policy.levels` 对应等级（下例为客户端默认 level 0）；现有 `stats`、`policy.system`、`api`、NGINX、Unix Socket 无需改动：
-
-```json
-"policy": {
-  "levels": {
-    "0": {
-      "statsUserOnline": true,
-      "statsUserUplink": true,
-      "statsUserDownlink": true
-    }
-  }
-}
-```
-
-不要覆盖已有策略，应按实际用户 level 合并。Xray 重启生效会造成短暂业务中断，先备份并运行配置测试。检查配置中标识数量（不显示秘密）：
+**无需配置 `email`，无需启用 `statsUserOnline`，无需改动现有 Xray / NGINX 配置。** 默认按键 `6` 是 **Clients / 来源 IP 汇总**：把相同来源 IP 在不同入站（如 WebSocket 和 gRPC）的 **accepted 日志记录**合并，显示 IP、所用传输类型、最近 5 分钟观察到的接受记录次数与最后活动时间。按 `7` 查看按 **IP + Inbound Tag** 拆分的详细列表。两页都来自本机 systemd journal，不读取用户 UUID。
 
 ```bash
-jq '[.inbounds[]?.settings.clients[]? | select((.email // "") != "")] | length' /usr/local/etc/xray/config.json
-xray api statsgetallonlineusers --server=127.0.0.1:10085
-xray api statsonlineiplist --server=127.0.0.1:10085 --email='your-client-email'
-```
+# 按 IP 聚合，在终端直接输出（无需 Go 环境）
+./xraytop --once --once-view 6 --config /usr/local/etc/xray/config.json
 
-**注意：** 列出的 IP 是 Xray 看到的来源地址，NGINX 反代可能隐藏真实客户端 IP；需要正确设置可信代理转发链。Xray 的在线图会忽略回环源 IP，出现“有流量、在线列表却为空”并不必然是故障。在线 IP 数不是 TCP 连接数。仅显示真实 API 数据，无法读取时会提示“未知”，绝不将近期活动用户误报为当前在线用户。
-
-
-## 最近连接来源 IP（新增按键 `7`）
-
-即使还没有配置 `statsUserOnline` 或客户端没有独立的 `email`，也可以用**本机 systemd 日志**观察最近连接来源。XrayTop 读取本机 `xray` unit 的最近 5 分钟日志，只提取 **accepted** 的 IP、入站 Tag、记录次数和最后记录时间；过滤 rejected/无效 IP，不会读取或展示 UUID。默认每约 10 秒刷新。
-
-```bash
-# 按键 7，最近 5 分钟来源 IP
-./xraytop --config /usr/local/etc/xray/config.json --api 127.0.0.1:10085
-
-# 无需全屏界面，直接打印最近连接来源 IP
+# 按 IP + 入口展开的列表
 ./xraytop --once --once-view 7 --config /usr/local/etc/xray/config.json
 
-# 如 Xray 的 systemd unit 名称不同
-./xraytop --journal-unit xray@one.service
+# 交互式监控，按 6 或 7
+./xraytop --config /usr/local/etc/xray/config.json --api 127.0.0.1:10085
 
-# 禁止读取本机 systemd 日志
-./xraytop --journal-unit ''
+# Xray systemd 单元不是 xray 时
+./xraytop --journal-unit xray@one.service
 ```
 
-**请区分两种信息：** `6` 页是 Xray 在线统计，属于 Xray 当前在线映射；`7` 页是**最近连接日志**，不证明当前在线、不识别具体账号。一个来源 IP 可以是 NAT 下多个用户，若 NGINX 未正确传递真实来源 IP，日志与在线统计也可能只看到反向代理 IP。
+采集器默认每约 10 秒读取 **最近 5 分钟、最多 500 条** `journalctl -u xray` 日志，并仅解析带源 IP 和有效入站标签的 `accepted` 记录；拒绝、鉴权失败的连接不作为成功客户端。IP 只是**分组标识**，不一定对应唯一用户：NAT/共享公网 IP、移动网络换 IP、NGINX 转发和用户可控代理头都可能影响结果；请仅在可信 NGINX 配置下相信透传的源 IP。**accepted 日志不证明连接仍然在线，次数不是活跃 TCP 数量，日志也不包含逐 IP 精确流量。** 页面故意标明「最近连接」，不将其冒充在线状态。
 
-默认只读、不修改 Xray 或 NGINX 配置，无需开启额外 TCP 端口。需要有本机 systemd journal 的读取权限。若出现“没有最近连接”，请先确认 `journalctl -u xray -n 20 --no-pager` 是否包含接受连接日志。
+Xray StatsService 仍继续提供按入站/出站汇总的实时流量。在线用户 RPC (`statsgetallonlineusers`/`statsonlineiplist`) 因你的安装没有 email 标识，在 IP 模式下不再轮询；它们与真实的源 IP 日志记录不同。
+
+如未显示来源 IP，请检查：
+
+```bash
+journalctl -u xray --since '5 minutes ago' --no-pager | grep ' accepted ' | tail -10
+```
+
+**只需更新 XrayTop 可执行文件，不要为了 IP 监控修改 Xray 用户 ID、API 或重启服务。**
