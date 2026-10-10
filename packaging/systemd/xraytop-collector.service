@@ -8,6 +8,8 @@ After=xray.service
 Type=simple
 User=root
 Group=root
+# Optional when NGINX access.log has mode 0640 and group adm:
+# SupplementaryGroups=adm
 UMask=0077
 WorkingDirectory=/var/lib/xraytop
 StateDirectory=xraytop

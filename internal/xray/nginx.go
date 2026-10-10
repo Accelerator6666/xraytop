@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -38,26 +37,22 @@ type NginxLocation struct {
 	Transport string
 }
 
-// DiscoverNginxIngress only reads NGINX's effective on-host configuration.
-// It never reloads/restarts NGINX and never writes configuration.
-func DiscoverNginxIngress(ctx context.Context, catalog Catalog) (NginxIngress, error) {
-	if len(catalog.Inbounds) == 0 {
-		return NginxIngress{}, errors.New("Xray inbound config unavailable for NGINX matching")
-	}
-	cmd := exec.CommandContext(ctx, "nginx", "-T")
-	out, err := cmd.Output()
-	if err != nil {
-		return NginxIngress{}, fmt.Errorf("nginx -T: %w", err)
-	}
-	if len(out) > 4<<20 {
-		return NginxIngress{}, errors.New("nginx -T output too large")
-	}
-	result := ParseNginxIngress(out, catalog)
-	result.CheckedAt = time.Now()
-	if len(result.Ports) == 0 {
-		return result, errors.New("no NGINX reverse-proxy targets match Xray inbound listen endpoints")
-	}
-	return result, nil
+// DiscoverNginxIngress parses the on-disk NGINX config and its include files
+// without spawning nginx -T. No certificates, pid files, or NGINX logs are
+// opened by the discovery process. This is intentionally configuration-state
+// inspection, not proof that an edited config was loaded by running NGINX.
+func DiscoverNginxIngress(ctx context.Context,catalog Catalog) (NginxIngress,error) {
+    return DiscoverNginxIngressFromFile(ctx,catalog,"/etc/nginx/nginx.conf")
+}
+
+func DiscoverNginxIngressFromFile(ctx context.Context,catalog Catalog,configPath string) (NginxIngress,error) {
+    if len(catalog.Inbounds)==0 {return NginxIngress{},errors.New("Xray inbound config unavailable for NGINX matching")}
+    nodes,err:=ReadNginxConfigTree(ctx,configPath)
+    if err!=nil {return NginxIngress{},fmt.Errorf("NGINX read-only config: %w",err)}
+    result:=parseNginxNodes(nodes,catalog)
+    result.CheckedAt=time.Now()
+    if len(result.Ports)==0 {return result,errors.New("no NGINX reverse-proxy targets match Xray inbound listen endpoints")}
+    return result,nil
 }
 
 type nginxNode struct {
@@ -182,7 +177,12 @@ func nginxBackend(raw string) string {
 // matching to configured Xray inbound sockets or loopback TCP endpoints.
 // Never infer an Xray service from port number, server_name or upstream name.
 func ParseNginxIngress(data []byte, catalog Catalog) NginxIngress {
-	root := nginxTree(nginxLex(data))
+	return parseNginxNodes(nginxTree(nginxLex(data)),catalog)
+}
+
+// parseNginxNodes accepts already-expanded NGINX includes without materializing
+// the full effective config or copying private config contents to logs.
+func parseNginxNodes(root []*nginxNode,catalog Catalog) NginxIngress {
 	var upstreams []*nginxNode
 	nginxDescendants(root, "upstream", &upstreams)
 	aliases := make(map[string][]string)

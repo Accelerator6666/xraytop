@@ -4,7 +4,7 @@
 
 **XrayTop** is a Linux-only, read-only terminal monitor for a **local Xray-core process**, with btop-inspired terminal views and protocol-aware inbound/outbound statistics. It supports mixed VLESS, VMess, Trojan, etc. configurations over WebSocket, gRPC, XHTTP, RAW/TCP, HTTPUpgrade, mKCP and more, including Unix-domain socket listeners behind nginx.
 
-> **v0.11.0-dev preview:** multi-protocol config discovery, process CPU/RSS, tagged inbound/outbound traffic, protocol and transport traffic aggregation, and terminal charts are implemented. Native gRPC client, nginx access-log correlation and per-user sessions are not implemented yet.
+> **v0.11.1-dev preview:** multi-protocol config discovery, process CPU/RSS, tagged inbound/outbound traffic, protocol and transport traffic aggregation, and terminal charts are implemented. Native gRPC client, nginx access-log correlation and per-user sessions are not implemented yet.
 
 ## How monitoring works
 
@@ -160,3 +160,18 @@ Deploy `packaging/systemd/xraytop-collector.service` with a private systemd
 StateDirectory in `/var/lib/xraytop`, storing separate snapshot and history.
 This version fixes the history `MM-DD` date-format issue and clips trends to
 terminal width. No extra listener or exposed API is added.
+
+
+## v0.11.1: sandbox-safe, read-only NGINX discovery
+
+Automatic ingress discovery no longer runs `nginx -T`, which may try to
+open TLS certificates, NGINX log files and the active pid file during validation.
+Instead, XrayTop reads `/etc/nginx/nginx.conf` and recursively expands
+literal `include` files (bounded to 256 files and 4 MiB), parsing the tree
+read-only and matching exact Xray backends. Override with
+`--nginx-config-file PATH`. No NGINX/Xray reload or config modifications.
+On-disk files might differ from *currently loaded* NGINX config if there
+are unapplied edits, so these are metadata observations, not runtime proof.
+An unreadable include returns an explicit error rather than partial mappings.
+If NGINX access logs are group-readable by `adm`, systemd can grant the
+collector `SupplementaryGroups=adm` instead of broad DAC override capabilities.

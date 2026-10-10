@@ -4,7 +4,7 @@
 
 **XrayTop** 是一个用于 **Linux 本机 Xray-core** 的只读终端监控程序，支持按**代理协议**和**传输方式**独立查看统计信息。适合同时运行 VLESS + gRPC、VLESS + WebSocket、VLESS + XHTTP、VMess、Trojan 等入站的服务器；可识别 NGINX 反代后连接 Xray 的 Unix Socket 监听路径。
 
-> **v0.11.0-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
+> **v0.11.1-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
 
 ## 工作原理
 
@@ -135,8 +135,7 @@ journalctl -u xray --since '5 minutes ago' --no-pager | grep ' accepted ' | tail
 
 ## NGINX 入口端口自动发现（v0.7）
 
-默认运行时，XrayTop 每约 60 秒使用本机 `nginx -T` 读取实际生效的
-NGINX 配置，根据 `server`/ `listen`/ `proxy_pass`/ `grpc_pass`
+默认运行时，XrayTop 每约 60 秒**只读解析**本机 `/etc/nginx/nginx.conf` 及递归 `include` 的文件（它们是当前磁盘配置，可能尚未加载），根据 `server`/ `listen`/ `proxy_pass`/ `grpc_pass`
 以及命名 upstream 的后端地址进行匹配。**只有后端与 Xray 配置中的
 Unix Socket 或回环 TCP 入站监听地址准确匹配，才会加入 TCP 采样端口**。
 不会猜测端口，也不会更改或重新加载 NGINX。页面 6 提供自动识别状态。
@@ -238,3 +237,22 @@ systemctl status xraytop-collector --no-pager
 
 服务以 root 运行以便读取 Xray systemd journal、NGINX 配置和日志，`StateDirectory=xraytop` 会创建私有 `/var/lib/xraytop` 目录；其中历史和快照分别存储在 `ip-history.json` 与 `snapshot.json`。**不修改或重启 Xray、NGINX。**
 服务停止后，过期快照不会被当作实时数据。此前 `/root/.local/state/xraytop/ip-history.json` 不会自动迁移，如需保留，必须先停服务、备份后再人工迁移。历史采样依旧不代表已认证在线会话。
+
+
+## v0.11.1：修复受限 systemd 服务无法执行 `nginx -T`
+
+之前使用 `nginx -T` 做 NGINX 自动发现，实际会执行配置测试并尝试打开
+证书、`error.log` 和 `/run/nginx.pid`，在严格 sandbox 下不可靠。
+现在默认只读解析 `/etc/nginx/nginx.conf` 和展开的 `include`，
+按后端 Unix Socket/回环地址与 Xray Inbound 精确匹配，**不运行 `nginx -T`**，
+不打开 TLS 证书、日志或 PID 文件。自定义主配置文件用：
+`--nginx-config-file /path/to/nginx.conf`。
+
+由于只读文件解析的是磁盘内容，若修改 NGINX 配置但尚未 reload，它可能
+**不等于当前运行的 NGINX 配置**；建议用单独的管理员命令验证 `nginx -t`
+并确保配置已生效。无法读取某一处 include 时明确报告错误，而不产生虚假的
+入口路由。此修复无需修改 Xray 或 NGINX 配置，服务继续保留严格隔离。
+
+日志读取是独立的采集步骤；若 access.log 属于 `www-data:adm`、权限
+`0640`，服务又清空了 Linux capabilities，可按实际需要只给服务增加
+`SupplementaryGroups=adm` 以获得只读日志权限，不要使用 `CAP_DAC_OVERRIDE`。

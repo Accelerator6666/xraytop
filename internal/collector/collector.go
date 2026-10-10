@@ -43,6 +43,7 @@ type Collector struct {
 	JournalUnit string
 	IngressPorts []uint16
 	NginxAuto bool
+	NginxConfigFile string
 	NginxAccessPath string
 	HistoryStore *history.Store
 	accessCache xray.NginxAccess
@@ -138,7 +139,7 @@ func (c *Collector) Sample(ctx context.Context) Snapshot {
 	ports := c.IngressPorts
 	if c.NginxAuto && len(ports) == 0 {
 		if !now.Before(c.nextNginx) && ctx.Err() == nil {
-			nginx, e := xray.DiscoverNginxIngress(ctx, snap.Catalog)
+			nginx, e := xray.DiscoverNginxIngressFromFile(ctx, snap.Catalog, c.NginxConfigFile)
 			if e != nil {
 				c.nginxCache, c.nginxError = xray.NginxIngress{}, e.Error()
 			} else {

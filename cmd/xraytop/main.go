@@ -19,7 +19,7 @@ import (
 	"github.com/Accelerator6666/xraytop/internal/xray"
 )
 
-var version = "v0.11.0-dev"
+var version = "v0.11.1-dev"
 
 // configPaths supports repeated --config arguments for multi-file setups.
 type configPaths []string
@@ -39,7 +39,8 @@ func main() {
 	onceView := flag.Int("once-view", 1, "view number used with --once (1-9; 6=source IPs, 7=IP+inbound, 8=NGINX requests, 9=IP history)")
 	journal := flag.String("journal-unit", "xray", "systemd unit for recent accepted source-IP records (empty disables)")
 	portsFlag := flag.String("ingress-ports", "", "manual ingress TCP ports; overrides NGINX discovery (e.g. 443,8964)")
-	nginxAuto := flag.Bool("nginx-auto", true, "discover matching Xray ingress ports from local nginx -T (disabled by --ingress-ports or --nginx-auto=false)")
+	nginxAuto := flag.Bool("nginx-auto", true, "read-only NGINX config file discovery (disabled by manual --ingress-ports)")
+	nginxConfigFile := flag.String("nginx-config-file", "/etc/nginx/nginx.conf", "read-only NGINX main config path; include files are expanded without nginx -T")
 	nginxAccess := flag.String("nginx-access-log", "/var/log/nginx/access.log", "local NGINX combined access log for optional source IP/route observations (empty disables)")
 	clientFilter := flag.String("clients-filter", "all", "source IP filter for view 6: all|xray|http|tcp (f cycles in the TUI)")
 	historyFile := flag.String("history-file", history.DefaultPath(), "local private 24h IP snapshot JSON file (empty disables history)")
@@ -100,7 +101,7 @@ func main() {
 	}
 	var c *collector.Collector
 	if !useDaemon {
-		c=&collector.Collector{Client: xray.Client{Binary: *binary, Server: *api}, ConfigFiles: configs, ConfigDir: *configDir, JournalUnit: *journal, IngressPorts: ports, NginxAuto: *nginxAuto, NginxAccessPath: *nginxAccess, HistoryStore:store}
+		c=&collector.Collector{Client: xray.Client{Binary: *binary, Server: *api}, ConfigFiles: configs, ConfigDir: *configDir, JournalUnit: *journal, IngressPorts: ports, NginxAuto: *nginxAuto, NginxConfigFile:*nginxConfigFile, NginxAccessPath: *nginxAccess, HistoryStore:store}
 	}
 	if *daemonMode {
 		ctx,stop:=signal.NotifyContext(context.Background(),syscall.SIGTERM,syscall.SIGINT)
