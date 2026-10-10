@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"strings"
-	"time"
 	"unicode"
 	"unicode/utf8"
 
