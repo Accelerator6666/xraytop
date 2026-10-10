@@ -17,6 +17,8 @@ type Snapshot struct {
 	APIError     string
 	APIEnabled   bool
 	Recent       xray.RecentActivity
+	Live         xray.LiveTCP
+	LiveError    string
 	RecentError  string
 	Traffic      xray.Breakdown
 	Catalog      xray.Catalog
@@ -31,6 +33,7 @@ type Collector struct {
 	ConfigDir   string
 	Client      xray.Client
 	JournalUnit string
+	IngressPorts []uint16
 	sampler     xray.Sampler
 	previous    system.CPUSample
 	lastTraffic xray.Breakdown
@@ -112,6 +115,12 @@ func (c *Collector) Sample(ctx context.Context) Snapshot {
 		c.nextRecent = time.Now().Add(10 * time.Second)
 	}
 	snap.Recent, snap.RecentError = c.recentCache, c.recentError
+	// Network socket evidence is independent of Xray StatsService/journal data.
+	// Enumerate only ingress ports explicitly selected by the operator.
+	if len(c.IngressPorts) > 0 {
+		snap.Live, err = xray.ReadLiveTCP(root, c.IngressPorts)
+		if err != nil { snap.LiveError = err.Error() }
+	}
 	snap.Inbounds = xray.JoinEndpoints(snap.Catalog.Inbounds, snap.Traffic.Inbound)
 	snap.Outbounds = xray.JoinEndpoints(snap.Catalog.Outbounds, snap.Traffic.Outbound)
 	return snap

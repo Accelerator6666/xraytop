@@ -4,7 +4,7 @@
 
 **XrayTop** 是一个用于 **Linux 本机 Xray-core** 的只读终端监控程序，支持按**代理协议**和**传输方式**独立查看统计信息。适合同时运行 VLESS + gRPC、VLESS + WebSocket、VLESS + XHTTP、VMess、Trojan 等入站的服务器；可识别 NGINX 反代后连接 Xray 的 Unix Socket 监听路径。
 
-> **v0.5.0-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
+> **v0.6.0-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
 
 ## 工作原理
 
@@ -115,3 +115,19 @@ journalctl -u xray --since '5 minutes ago' --no-pager | grep ' accepted ' | tail
 ```
 
 **只需更新 XrayTop 可执行文件，不要为了 IP 监控修改 Xray 用户 ID、API 或重启服务。**
+
+## 来源 IP 与当前 TCP 连接（v0.6）
+
+使用 `--ingress-ports` 指定本机实际用于 Xray/NGINX 接入的 TCP 监听端口，才会启用 TCP 快照。**请勿照搬示例端口，先检查你的实际 NGINX 监听配置。**
+
+```bash
+./xraytop --config /usr/local/etc/xray/config.json \
+  --api 127.0.0.1:10085 --ingress-ports 443,8964
+./xraytop --once --once-view 6 --ingress-ports 443,8964
+```
+
+- **按键 6**：将 Linux `/proc/net/tcp`、`/proc/net/tcp6` 的当前 `ESTABLISHED` 连接来源 IP 与 Xray 最近 5 分钟的 `accepted` 日志按 IP 合并显示；没有 `--ingress-ports` 时只显示日志数据。
+- **按键 7**：仍然按照来源 IP + Inbound 展示最近接受连接的日志，并显示该 IP 在指定入口端口上建立的 TCP 连接数（不是对应入站会话数）。
+- 无需客户端 `email`、不启用额外服务或端口，也不修改 Xray 配置。
+
+**限制**：入口的 TCP 连接数量不等于通过 Xray 认证的客户端数量。尤其 NGINX 同时承载网站、HTTP/2、WebSocket 与 gRPC 时，不能可靠地根据一个 TCP socket 推断它属于哪个 VLESS 用户或 Inbound。NAT/CDN/反代还可能导致 NGINX 见到的 IP 与 Xray 日志中的来源不同。按 IP 分组并不是严格的用户身份识别，也不能由此计算每 IP 的准确流量。

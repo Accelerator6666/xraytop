@@ -4,7 +4,7 @@
 
 **XrayTop** is a Linux-only, read-only terminal monitor for a **local Xray-core process**, with btop-inspired terminal views and protocol-aware inbound/outbound statistics. It supports mixed VLESS, VMess, Trojan, etc. configurations over WebSocket, gRPC, XHTTP, RAW/TCP, HTTPUpgrade, mKCP and more, including Unix-domain socket listeners behind nginx.
 
-> **v0.5.0-dev preview:** multi-protocol config discovery, process CPU/RSS, tagged inbound/outbound traffic, protocol and transport traffic aggregation, and terminal charts are implemented. Native gRPC client, nginx access-log correlation and per-user sessions are not implemented yet.
+> **v0.6.0-dev preview:** multi-protocol config discovery, process CPU/RSS, tagged inbound/outbound traffic, protocol and transport traffic aggregation, and terminal charts are implemented. Native gRPC client, nginx access-log correlation and per-user sessions are not implemented yet.
 
 ## How monitoring works
 
@@ -67,12 +67,12 @@ go vet ./...
 
 GitHub Actions runs tests and cross-compiles Linux amd64/arm64. See [architecture](docs/ARCHITECTURE.md). MIT License.
 
-> Compatibility: Xray 26.3.27 may omit `value` for zero-byte counters; XrayTop v0.5.0-dev correctly interprets them as zero.
+> Compatibility: Xray 26.3.27 may omit `value` for zero-byte counters; XrayTop v0.6.0-dev correctly interprets them as zero.
 
 
 ## IP-first client view (`6`) and IP + inbound detail (`7`)
 
-Client names or email labels are **not required**. XrayTop v0.5.0-dev groups the
+Client names or email labels are **not required**. XrayTop v0.6.0-dev groups the
 source IPs present in **accepted** local Xray journald records. `6` aggregates
 by IP across all inbound tags and shows transport metadata; `7` breaks results
 down by IP + inbound. The collector reads at most 500 lines from the preceding
@@ -90,3 +90,9 @@ multiple clients under one IP, and one client can change addresses. For nginx
 reverse proxy deployments, inspect trusted client-IP forwarding: Xray logs may
 record a proxy address or an untrusted claimed address. No accurate per-IP byte
 counters can be calculated from standard tagged StatsService totals.
+
+## Optional live TCP observation
+
+Pass `--ingress-ports 443,8964` using **your actual** local NGINX/Xray ingress ports to observe Linux ESTABLISHED TCP peers on those ports. View `6` merges those peers by IP with accepted Xray journal events from the past 5 minutes; view `7` adds an IP-level TCP count. Without the flag there is no live socket enumeration.
+
+**Important:** An ESTABLISHED TCP socket on an ingress port is not proof of an authenticated Xray user/session or an active proxy request. Shared HTTPS, CDN, NAT, multiplexing, and reverse proxies may produce different peer IPs than the Xray access logs. Do not treat the counts as authenticated sessions or per-user bandwidth.

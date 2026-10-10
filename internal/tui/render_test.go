@@ -46,7 +46,7 @@ func TestIPFirstClientsView(t *testing.T) {
 		{Tag: "vless-ws", Transport: "WebSocket"}, {Tag: "vless-grpc", Transport: "gRPC"},
 	}}}
 	output := Screen{Width: 130, Height: 24, View: 5, Snapshot: snap}.Paint()
-	for _, want := range []string{"CLIENT SOURCE IP", "192.0.2.1", "WebSocket,gRPC", "6s", "[6] Clients", "NOT online status"} {
+	for _, want := range []string{"CLIENTS BY SOURCE IP", "192.0.2.1", "vless-grpc,vless-ws", "6 accepted journal events", "[6] IP Clients", "NOT Xray user sessions"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("expected %q: %s", want, output)
 		}
@@ -56,7 +56,7 @@ func TestIPFirstClientsView(t *testing.T) {
 	}
 	snap.Recent = xray.RecentActivity{CheckedAt: at}
 	output = Screen{Width: 100, Height: 20, View: 5, Snapshot: snap}.Paint()
-	if !strings.Contains(output, "does NOT prove") {
+	if !strings.Contains(output, "does not prove") {
 		t.Error("missing empty journal caveat")
 	}
 	if safeUser("alice\x1b[31m") == "alice\x1b[31m" {

@@ -68,3 +68,7 @@ reverse proxies may hide the original IP.
 The new `internal/xray/activity.go` collector reads systemd's local journal (`journalctl -u xray --since '5 minutes ago' -o short-unix -n 500`). Parsing accepts only lines containing `from IP:port accepted ... [inbound >> outbound]` with validated IPv4/IPv6 source addresses; rejected requests are excluded. The collector is bounded and can be disabled using `--journal-unit ''`. It does not parse UUIDs or destinations into the TUI. The observed address may be forwarded by a reverse proxy; no identity or online-state inference is performed.
 
 The `6` Users view and `7` Recent IP view are deliberately separate: Xray's online map supports authenticated user/IP associations only with its applicable `statsUserOnline` policies and client email identifiers. Journal entries can indicate recent accepted traffic but are not sessions or user identities.
+
+## Optional live TCP observations
+
+Linux host procfs `/proc/net/tcp` and `/proc/net/tcp6` provide ESTABLISHED sockets, filtered only by explicit `--ingress-ports`. This network-level view is joined to recent accepted journal records on normalized IP for convenience, not authenticated user identity. Reading is local and does not require an Xray config change. IPv6 procfs entries require little-endian decoding per 32-bit word. Peer socket counts must never be presented as authenticated Xray user sessions or exact per-inbound connections.

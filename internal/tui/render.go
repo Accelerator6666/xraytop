@@ -103,40 +103,32 @@ func (s Screen) Paint() string {
 		add(endpointHeader(inner))
 		addEndpointRows(&lines, rows, max(1, height-len(lines)-4), inner, s.View == 1)
 	case 5:
-		add(s.style(" CLIENT SOURCE IPs  (5-minute accepted activity; NOT online status)", bold))
-		add(" Source IP                               Transports                 Events   Last seen   Age")
-		if s.Snapshot.RecentError != "" {
-			add(s.style(" Journal: "+s.Snapshot.RecentError, yellow))
-		} else if s.Snapshot.Recent.CheckedAt.IsZero() {
-			add(" Journal IP collector disabled or waiting for first sample.")
+		add(s.style(" CLIENTS BY SOURCE IP  (TCP sockets + recent Xray accepted events)", bold))
+		add(" Source IP                                TCP    Accepted   Inbounds / transports             Last seen")
+		if s.Snapshot.LiveError != "" { add(s.style(" TCP warning: "+s.Snapshot.LiveError,yellow)) }
+		if s.Snapshot.RecentError != "" { add(s.style(" Journal warning: "+s.Snapshot.RecentError,yellow)) }
+		if len(s.Snapshot.Live.Ports)==0 { add(" Live TCP disabled: pass --ingress-ports <port1,port2> for NGINX ingress sockets.") }
+		clients:=xray.MergeObservedClients(s.Snapshot.Recent.Sources,s.Snapshot.Catalog,s.Snapshot.Live)
+		if len(clients)==0 {
+			add(" No observed source IPs. A missing record does not prove a client is offline.")
 		} else {
-			clients := xray.GroupSourcesByIP(s.Snapshot.Recent.Sources, s.Snapshot.Catalog)
-			if len(clients) == 0 {
-				add(" No accepted connection entries in the available 5-minute journal window.")
-				add(" This does NOT prove no clients are currently connected.")
-			} else {
-				limit := max(1, height-len(lines)-6)
-				for i, client := range clients {
-					if i >= limit {
-						break
-					}
-					tr := strings.Join(client.Transports, ",")
-					if tr == "" {
-						tr = "Unknown"
-					}
-					age := s.Snapshot.At.Sub(client.LastSeen)
-					if age < 0 {
-						age = 0
-					}
-					add(fmt.Sprintf(" %-39s %-24s %6d   %s   %s", truncate(client.IP, 39), truncate(tr, 24), client.Accepted, client.LastSeen.Local().Format("15:04:05"), age.Round(time.Second)))
-				}
-				add(fmt.Sprintf(" %d source IPs observed / %d accepted events (journal, up to 500 lines)", len(clients), s.Snapshot.Recent.Events))
+			limit:=max(1,height-len(lines)-7)
+			for i,client:=range clients {
+				if i>=limit {break}
+				meta:=strings.Join(client.Inbounds,",")
+				if len(client.Transports)>0 {meta+=" ("+strings.Join(client.Transports,",")+")"}
+				if meta=="" {meta="-"}
+				last:="-"
+				if !client.LastSeen.IsZero(){last=client.LastSeen.Local().Format("15:04:05")}
+				add(fmt.Sprintf(" %-40s %5d %9d   %-33s %s",truncate(client.IP,40),client.TCPConnections,client.Accepted,truncate(meta,33),last))
 			}
+			add(fmt.Sprintf(" %d observed IPs | %d TCP ESTABLISHED sockets on selected ingress ports | %d accepted journal events",len(clients),s.Snapshot.Live.Connections,s.Snapshot.Recent.Events))
 		}
-		add(" IP is a grouping key, NOT a unique user identity. NAT and proxy headers can affect it.")
+		add(" TCP counts ingress network sockets, NOT Xray user sessions; HTTPS sites may share ports.")
+		add(" An IP in TCP and logs does not prove that the TCP socket belongs to the logged Xray request.")
 	case 6:
 		add(s.style(" SOURCE IP + INBOUND  (5-minute accepted activity; NOT online status)", bold))
-		add(" Source IP                                Inbound tag                     Events   Last seen")
+		add(" Source IP                                Inbound tag                     Events   TCP    Last seen")
 		if s.Snapshot.RecentError != "" {
 			add(s.style(" Journal: "+s.Snapshot.RecentError, yellow))
 		} else if s.Snapshot.Recent.CheckedAt.IsZero() {
@@ -149,10 +141,12 @@ func (s Screen) Paint() string {
 				if i >= max(1, height-len(lines)-5) {
 					break
 				}
-				add(fmt.Sprintf(" %-40s %-30s %8d   %s", truncate(row.IP, 40), truncate(row.Inbound, 30), row.Accepted, row.LastSeen.Local().Format("15:04:05")))
+				tcpCount:=0
+				for _,peer:=range s.Snapshot.Live.Peers { if peer.IP==row.IP {tcpCount=peer.Connections;break} }
+				add(fmt.Sprintf(" %-40s %-30s %8d %5d   %s",truncate(row.IP,40),truncate(row.Inbound,30),row.Accepted,tcpCount,row.LastSeen.Local().Format("15:04:05")))
 			}
 			add(fmt.Sprintf(" %d accepted events / %d IP+inbound groups (last 5m)", s.Snapshot.Recent.Events, len(s.Snapshot.Recent.Sources)))
-			add(" Journal evidence only; accepted events do not prove currently live sessions.")
+			add(" TCP is a per-IP host ingress socket count, NOT an authenticated per-Inbound session count.")
 		}
 	case 3, 4:
 		key, title := "protocol", "PROXY PROTOCOLS"
@@ -171,7 +165,7 @@ func (s Screen) Paint() string {
 		lines = lines[:height-2]
 	}
 	add(ruler)
-	footer := " [1] Overview [2] In [3] Out [4] Protocols [5] Transports [6] Clients [7] IP+Inbound [q] Quit"
+	footer := " [1] Overview [2] In [3] Out [4] Protocols [5] Transports [6] IP Clients [7] IP+Inbound [q] Quit"
 	if inner < 100 {
 		footer = " [1]Home [2]In [3]Out [4]Proto [5]Trans [6]Clients [7]IPs [q] Quit"
 	}

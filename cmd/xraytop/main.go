@@ -14,7 +14,7 @@ import (
 	"github.com/Accelerator6666/xraytop/internal/xray"
 )
 
-var version = "v0.5.0-dev"
+var version = "v0.6.0-dev"
 
 // configPaths supports repeated --config arguments for multi-file setups.
 type configPaths []string
@@ -33,6 +33,7 @@ func main() {
 	once := flag.Bool("once", false, "print one plain snapshot and exit")
 	onceView := flag.Int("once-view", 1, "view number used with --once (1-7; 6=source IPs, 7=IP+inbound)")
 	journal := flag.String("journal-unit", "xray", "systemd unit for recent accepted source-IP records (empty disables)")
+	portsFlag := flag.String("ingress-ports", "", "comma-separated local NGINX/Xray TCP ingress ports (e.g. 443,8964); empty disables TCP sampling")
 	noColor := flag.Bool("no-color", false, "disable ANSI colors")
 	flag.Parse()
 	if *versionFlag {
@@ -51,7 +52,9 @@ func main() {
 		fmt.Fprintln(os.Stderr, "--interval must be at least 1s")
 		os.Exit(2)
 	}
-	c := &collector.Collector{Client: xray.Client{Binary: *binary, Server: *api}, ConfigFiles: configs, ConfigDir: *configDir, JournalUnit: *journal}
+	ports, err := xray.ParseIngressPorts(*portsFlag)
+	if err != nil { fmt.Fprintln(os.Stderr, "xraytop:", err); os.Exit(2) }
+	c := &collector.Collector{Client: xray.Client{Binary: *binary, Server: *api}, ConfigFiles: configs, ConfigDir: *configDir, JournalUnit: *journal, IngressPorts: ports}
 	if *once {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
