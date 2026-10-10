@@ -20,6 +20,8 @@ type Snapshot struct {
 	Live         xray.LiveTCP
 	Nginx        xray.NginxIngress
 	NginxError   string
+	Access       xray.NginxAccess
+	AccessError  string
 	LiveError    string
 	RecentError  string
 	Traffic      xray.Breakdown
@@ -37,6 +39,10 @@ type Collector struct {
 	JournalUnit string
 	IngressPorts []uint16
 	NginxAuto bool
+	NginxAccessPath string
+	accessCache xray.NginxAccess
+	accessError string
+	nextAccess time.Time
 	nginxCache xray.NginxIngress
 	nginxError string
 	nextNginx time.Time
@@ -142,6 +148,14 @@ func (c *Collector) Sample(ctx context.Context) Snapshot {
 		snap.Live, err = xray.ReadLiveTCP(root, ports)
 		if err != nil { snap.LiveError = err.Error() }
 	}
+	// Access logs are optional and never read unless NGINX auto-discovery
+	// yielded a verified Xray-backed location. Read a bounded tail every 10s.
+	if c.NginxAccessPath != "" && len(snap.Nginx.Locations) > 0 && !now.Before(c.nextAccess) && ctx.Err() == nil {
+		access, e := xray.ReadNginxAccess(c.NginxAccessPath, snap.Nginx.Locations)
+		if e != nil { c.accessCache, c.accessError = xray.NginxAccess{}, e.Error() } else { c.accessCache, c.accessError = access, "" }
+		c.nextAccess = time.Now().Add(10*time.Second)
+	}
+	snap.Access, snap.AccessError = c.accessCache, c.accessError
 	snap.Inbounds = xray.JoinEndpoints(snap.Catalog.Inbounds, snap.Traffic.Inbound)
 	snap.Outbounds = xray.JoinEndpoints(snap.Catalog.Outbounds, snap.Traffic.Outbound)
 	return snap

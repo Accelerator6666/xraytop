@@ -70,6 +70,13 @@ func TestNGINXAutoStatus(t *testing.T) {
 	if !strings.Contains(out,"NGINX auto: 2 verified proxy ports / 2 Xray inbound routes") { t.Fatalf("missing auto detection: %s",out) }
 }
 
+func TestNginxAccessView(t *testing.T) {
+	at:=time.Unix(1791602300,0)
+	snap:=collector.Snapshot{At:at,Access:xray.NginxAccess{CheckedAt:at,Total:4,Matched:2,Requests:[]xray.NginxRequest{{IP:"192.0.2.9",Inbound:"vless-ws",Transport:"WebSocket",Requests:2,SuccessHTTP:1,LastSeen:at}}}}
+	out:=(Screen{Width:145,Height:25,View:7,Snapshot:snap}).Paint()
+	for _,want:=range []string{"NGINX PROXY HTTP REQUESTS","192.0.2.9","WebSocket","Matched 2 / 4","NOT an authenticated VLESS"} {if !strings.Contains(out,want){t.Fatalf("missing %q: %s",want,out)}}
+}
+
 func TestRecentSourceView(t *testing.T) {
 	snapshot := collector.Snapshot{At: time.Unix(1791602300, 0), Recent: xray.RecentActivity{
 		CheckedAt: time.Unix(1791602300, 0), Events: 3,

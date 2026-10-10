@@ -4,7 +4,7 @@
 
 **XrayTop** is a Linux-only, read-only terminal monitor for a **local Xray-core process**, with btop-inspired terminal views and protocol-aware inbound/outbound statistics. It supports mixed VLESS, VMess, Trojan, etc. configurations over WebSocket, gRPC, XHTTP, RAW/TCP, HTTPUpgrade, mKCP and more, including Unix-domain socket listeners behind nginx.
 
-> **v0.7.0-dev preview:** multi-protocol config discovery, process CPU/RSS, tagged inbound/outbound traffic, protocol and transport traffic aggregation, and terminal charts are implemented. Native gRPC client, nginx access-log correlation and per-user sessions are not implemented yet.
+> **v0.8.0-dev preview:** multi-protocol config discovery, process CPU/RSS, tagged inbound/outbound traffic, protocol and transport traffic aggregation, and terminal charts are implemented. Native gRPC client, nginx access-log correlation and per-user sessions are not implemented yet.
 
 ## How monitoring works
 
@@ -119,3 +119,8 @@ NGINX HTTP(S) ports may carry unrelated site traffic, so TCP counts remain
 When the active configuration cannot be read or proxy backends do not match
 configured Xray inbound listeners, the program shows a warning and does not
 guess port mappings.
+
+
+## Read-only NGINX access-log correlation (v0.8)
+
+View `8` reads at most the last 2 MiB of the local NGINX **combined** access log every ~10 seconds; HTTP requests are attributed to an Xray inbound only when a matching NGINX location has an unambiguous backend. It discards raw paths/query strings, referers, user-agents, and credentials. `--nginx-access-log ''` disables this collector. View `6` adds the matched HTTP request count per source IP, separately from Xray accepted events and current TCP sockets. HTTP 101/200 does not prove Xray authentication; common NGINX combined logs don't identify the local listener port, so ambiguous virtual-host routes are dropped. Log volume may limit 5-minute coverage.

@@ -102,14 +102,15 @@ func (s Screen) Paint() string {
 		add(endpointHeader(inner))
 		addEndpointRows(&lines, rows, max(1, height-len(lines)-4), inner, s.View == 1)
 	case 5:
-		add(s.style(" CLIENTS BY SOURCE IP  (TCP sockets + recent Xray accepted events)", bold))
-		add(" Source IP                                TCP    Accepted   Inbounds / transports             Last seen")
+		add(s.style(" CLIENTS BY SOURCE IP  (TCP + Xray accepted + NGINX HTTP observations)", bold))
+		add(" Source IP                                TCP    Accepted  HTTP     Inbounds / transports           Last seen")
 		if !s.Snapshot.Nginx.CheckedAt.IsZero() {
 			add(fmt.Sprintf(" NGINX auto: %d verified proxy ports / %d Xray inbound routes", len(s.Snapshot.Nginx.Ports), len(s.Snapshot.Nginx.Routes)))
 		}
 		if s.Snapshot.NginxError != "" { add(s.style(" NGINX discovery: "+s.Snapshot.NginxError, yellow)) }
 		if s.Snapshot.LiveError != "" { add(s.style(" TCP warning: "+s.Snapshot.LiveError,yellow)) }
 		if s.Snapshot.RecentError != "" { add(s.style(" Journal warning: "+s.Snapshot.RecentError,yellow)) }
+		if s.Snapshot.AccessError != "" { add(s.style(" NGINX access: "+s.Snapshot.AccessError, yellow)) }
 		if len(s.Snapshot.Live.Ports)==0 { add(" No TCP ingress ports selected. Check NGINX auto discovery or use --ingress-ports.") }
 		clients:=xray.MergeObservedClients(s.Snapshot.Recent.Sources,s.Snapshot.Catalog,s.Snapshot.Live)
 		if len(clients)==0 {
@@ -123,12 +124,14 @@ func (s Screen) Paint() string {
 				if meta=="" {meta="-"}
 				last:="-"
 				if !client.LastSeen.IsZero(){last=client.LastSeen.Local().Format("15:04:05")}
-				add(fmt.Sprintf(" %-40s %5d %9d   %-33s %s",truncate(client.IP,40),client.TCPConnections,client.Accepted,truncate(meta,33),last))
+				http:=0
+				for _,req:=range s.Snapshot.Access.Requests { if req.IP==client.IP {http+=req.Requests} }
+				add(fmt.Sprintf(" %-40s %5d %9d %5d   %-31s %s",truncate(client.IP,40),client.TCPConnections,client.Accepted,http,truncate(meta,31),last))
 			}
 			add(fmt.Sprintf(" %d observed IPs | %d TCP ESTABLISHED sockets on selected ingress ports | %d accepted journal events",len(clients),s.Snapshot.Live.Connections,s.Snapshot.Recent.Events))
 		}
 		add(" TCP counts ingress network sockets, NOT Xray user sessions; HTTPS sites may share ports.")
-		add(" An IP in TCP and logs does not prove that the TCP socket belongs to the logged Xray request.")
+		add(" NGINX HTTP responses do not prove VLESS authentication; only accepted Xray events indicate proxy activity.")
 	case 6:
 		add(s.style(" SOURCE IP + INBOUND  (5-minute accepted activity; NOT online status)", bold))
 		add(" Source IP                                Inbound tag                     Events   TCP    Last seen")
@@ -151,6 +154,21 @@ func (s Screen) Paint() string {
 			add(fmt.Sprintf(" %d accepted events / %d IP+inbound groups (last 5m)", s.Snapshot.Recent.Events, len(s.Snapshot.Recent.Sources)))
 			add(" TCP is a per-IP host ingress socket count, NOT an authenticated per-Inbound session count.")
 		}
+	case 7:
+		add(s.style(" NGINX PROXY HTTP REQUESTS  (last 5 min, matched URL locations; NOT auth)", bold))
+		add(" Source IP                               Inbound / transport           HTTP   101/200   Last seen")
+		if s.Snapshot.AccessError != "" {add(s.style(" NGINX access: "+s.Snapshot.AccessError, yellow))}
+		if s.Snapshot.Access.CheckedAt.IsZero() {add(" No NGINX access sample. Enable --nginx-auto and readable --nginx-access-log.")}
+		if len(s.Snapshot.Access.Requests)==0 {add(" No recent requests matched a uniquely identified Xray location.")}
+		limit:=max(1,height-len(lines)-6)
+		for i,req:=range s.Snapshot.Access.Requests {
+			if i>=limit {break}
+			meta:=req.Inbound+" / "+req.Transport
+			add(fmt.Sprintf(" %-39s %-29s %5d %8d   %s",truncate(req.IP,39),truncate(meta,29),req.Requests,req.SuccessHTTP,req.LastSeen.Local().Format("15:04:05")))
+		}
+		add(fmt.Sprintf(" Matched %d / %d recent HTTP requests (last 2 MiB of access.log)",s.Snapshot.Access.Matched,s.Snapshot.Access.Total))
+		if s.Snapshot.Access.Truncated {add(" Bounded log tail: earlier requests may be omitted, even within the 5-min window.")}
+		add(" 101/200 means successful HTTP handshake/response, NOT an authenticated VLESS session.")
 	case 3, 4:
 		key, title := "protocol", "PROXY PROTOCOLS"
 		if s.View == 4 {
@@ -168,9 +186,9 @@ func (s Screen) Paint() string {
 		lines = lines[:height-2]
 	}
 	add(ruler)
-	footer := " [1] Overview [2] In [3] Out [4] Protocols [5] Transports [6] IP Clients [7] IP+Inbound [q] Quit"
+	footer := " [1] Overview [2] In [3] Out [4] Protocols [5] Transports [6] IP Clients [7] IP+Inbound [8] NGINX [q] Quit"
 	if inner < 100 {
-		footer = " [1]Home [2]In [3]Out [4]Proto [5]Trans [6]Clients [7]IPs [q] Quit"
+		footer = " [1]Home [2]In [3]Out [4]Proto [5]Trans [6]Clients [7]IPs [8]HTTP [q] Quit"
 	}
 	add(footer)
 	if s.Color {

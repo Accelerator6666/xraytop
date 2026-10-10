@@ -26,6 +26,16 @@ type NginxIngress struct {
 	CheckedAt time.Time
 	Ports     []uint16
 	Routes    []NginxRoute
+	// Locations are URL-path-to-inbound matches, for the combined access log.
+	// They are configuration metadata, not proof of authenticated VLESS traffic.
+	Locations []NginxLocation
+}
+
+type NginxLocation struct {
+	Pattern   string
+	Exact     bool
+	Inbound   string
+	Transport string
 }
 
 // DiscoverNginxIngress only reads NGINX's effective on-host configuration.
@@ -223,6 +233,8 @@ func ParseNginxIngress(data []byte, catalog Catalog) NginxIngress {
 	routeKeys := make(map[string]bool)
 	ports := make(map[uint16]bool)
 	var routes []NginxRoute
+	var locations []NginxLocation
+	locationKeys := make(map[string]bool)
 	for _, server := range servers {
 		var listenPorts []uint16
 		for _, child := range server.children {
@@ -248,8 +260,38 @@ func ParseNginxIngress(data []byte, catalog Catalog) NginxIngress {
 				}
 			}
 		}
+		// Access logs use URI but default combined logs do not record $server_port.
+		// Keep a location only when its backend matches a configured Xray
+		// inbound exactly; later matching rejects ambiguous location mappings.
+		var locs []*nginxNode
+		nginxDescendants(server.children, "location", &locs)
+		for _, loc := range locs {
+			if len(loc.args) == 0 { continue }
+			pattern, exact := loc.args[0], false
+			switch pattern {
+			case "=", "^~":
+				if len(loc.args) < 2 { continue }
+				exact = pattern == "="
+				pattern = loc.args[1]
+			case "~", "~*":
+				continue // Regular-expression locations cannot be matched reliably here.
+			}
+			if !strings.HasPrefix(pattern, "/") { continue }
+			var passes []*nginxNode
+			nginxDescendants(loc.children, "proxy_pass", &passes)
+			nginxDescendants(loc.children, "grpc_pass", &passes)
+			for _, pass := range passes {
+				if len(pass.args) == 0 { continue }
+				for _, inbound := range matches(pass.args[0]) {
+					key := fmt.Sprintf("%s\x00%t\x00%s", pattern, exact, inbound.Tag)
+					if locationKeys[key] { continue }
+					locationKeys[key] = true
+					locations = append(locations, NginxLocation{Pattern:pattern,Exact:exact,Inbound:inbound.Tag,Transport:inbound.Transport})
+				}
+			}
+		}
 	}
-	result := NginxIngress{Routes: routes}
+	result := NginxIngress{Routes: routes, Locations: locations}
 	for p := range ports { result.Ports = append(result.Ports, p) }
 	sort.Slice(result.Ports, func(i, j int) bool { return result.Ports[i] < result.Ports[j] })
 	sort.Slice(result.Routes, func(i, j int) bool {
