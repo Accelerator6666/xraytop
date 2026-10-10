@@ -4,7 +4,7 @@
 
 **XrayTop** is a Linux-only, read-only terminal monitor for a **local Xray-core process**, with btop-inspired terminal views and protocol-aware inbound/outbound statistics. It supports mixed VLESS, VMess, Trojan, etc. configurations over WebSocket, gRPC, XHTTP, RAW/TCP, HTTPUpgrade, mKCP and more, including Unix-domain socket listeners behind nginx.
 
-> **v0.8.0-dev preview:** multi-protocol config discovery, process CPU/RSS, tagged inbound/outbound traffic, protocol and transport traffic aggregation, and terminal charts are implemented. Native gRPC client, nginx access-log correlation and per-user sessions are not implemented yet.
+> **v0.9.0-dev preview:** multi-protocol config discovery, process CPU/RSS, tagged inbound/outbound traffic, protocol and transport traffic aggregation, and terminal charts are implemented. Native gRPC client, nginx access-log correlation and per-user sessions are not implemented yet.
 
 ## How monitoring works
 
@@ -124,3 +124,7 @@ guess port mappings.
 ## Read-only NGINX access-log correlation (v0.8)
 
 View `8` reads at most the last 2 MiB of the local NGINX **combined** access log every ~10 seconds; HTTP requests are attributed to an Xray inbound only when a matching NGINX location has an unambiguous backend. It discards raw paths/query strings, referers, user-agents, and credentials. `--nginx-access-log ''` disables this collector. View `6` adds the matched HTTP request count per source IP, separately from Xray accepted events and current TCP sockets. HTTP 101/200 does not prove Xray authentication; common NGINX combined logs don't identify the local listener port, so ambiguous virtual-host routes are dropped. Log volume may limit 5-minute coverage.
+
+## Source-IP evidence tiers and filtering (v0.9)
+
+View `6` includes **NGINX-only IPs** even when neither Xray journald nor TCP snapshots contain them. It ranks sources by evidence tier: `XRAY` accepted journal activity, `HTTP` matched NGINX requests only, `TCP` ingress sockets only. These tiers do not represent logged-in users or an authenticated live-session count. Ports shown are TCP listener ports for that source IP, not verified Xray inbound associations. Press `f` to cycle `all → xray → http → tcp`, or pass `--clients-filter xray` (also usable with `--once --once-view 6`). The HTTP-only tier does not populate Xray-authenticated inbound metadata.

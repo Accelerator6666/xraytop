@@ -14,7 +14,7 @@ import (
 	"github.com/Accelerator6666/xraytop/internal/xray"
 )
 
-var version = "v0.8.0-dev"
+var version = "v0.9.0-dev"
 
 // configPaths supports repeated --config arguments for multi-file setups.
 type configPaths []string
@@ -36,6 +36,7 @@ func main() {
 	portsFlag := flag.String("ingress-ports", "", "manual ingress TCP ports; overrides NGINX discovery (e.g. 443,8964)")
 	nginxAuto := flag.Bool("nginx-auto", true, "discover matching Xray ingress ports from local nginx -T (disabled by --ingress-ports or --nginx-auto=false)")
 	nginxAccess := flag.String("nginx-access-log", "/var/log/nginx/access.log", "local NGINX combined access log for optional source IP/route observations (empty disables)")
+	clientFilter := flag.String("clients-filter", "all", "source IP filter for view 6: all|xray|http|tcp (f cycles in the TUI)")
 	noColor := flag.Bool("no-color", false, "disable ANSI colors")
 	flag.Parse()
 	if *versionFlag {
@@ -54,6 +55,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, "--interval must be at least 1s")
 		os.Exit(2)
 	}
+	switch *clientFilter {
+	case "all", "xray", "http", "tcp":
+	default:
+		fmt.Fprintln(os.Stderr, "--clients-filter must be all, xray, http, or tcp")
+		os.Exit(2)
+	}
 	ports, err := xray.ParseIngressPorts(*portsFlag)
 	if err != nil { fmt.Fprintln(os.Stderr, "xraytop:", err); os.Exit(2) }
 	c := &collector.Collector{Client: xray.Client{Binary: *binary, Server: *api}, ConfigFiles: configs, ConfigDir: *configDir, JournalUnit: *journal, IngressPorts: ports, NginxAuto: *nginxAuto, NginxAccessPath: *nginxAccess}
@@ -61,10 +68,10 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		snap := c.Sample(ctx)
-		fmt.Print(tui.Screen{Snapshot: snap, Width: 100, Height: 24, View: *onceView - 1, Color: false}.Paint(), "\n")
+		fmt.Print(tui.Screen{Snapshot: snap, Width: 100, Height: 24, View: *onceView - 1, ClientFilter: *clientFilter, Color: false}.Paint(), "\n")
 		return
 	}
-	app := tui.App{Collector: c, Interval: *interval, NoColor: *noColor || os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb"}
+	app := tui.App{Collector: c, Interval: *interval, ClientFilter: *clientFilter, NoColor: *noColor || os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb"}
 	if err := app.Run(context.Background()); err != nil {
 		fmt.Fprintln(os.Stderr, "xraytop:", err)
 		os.Exit(1)

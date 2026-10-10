@@ -77,3 +77,7 @@ Linux host procfs `/proc/net/tcp` and `/proc/net/tcp6` provide ESTABLISHED socke
 ## NGINX reverse-proxy port discovery (v0.7)
 
 The default local-only auto-discovery calls `nginx -T` (read-only) every ~60s, parses brace-scoped `server`, `location`, `listen`, `upstream`, `server`, `proxy_pass` and `grpc_pass` directives. Exact backend matches against the current Xray Catalog's Unix-domain socket and loopback listener endpoints yield monitored TCP ingress ports and corresponding Xray inbound tags. A port can map to more than one inbound. Nonmatching web-only server blocks are excluded. Manual `--ingress-ports` overrides auto discovery and `--nginx-auto=false` disables it. Configuration matches are not proof of per-socket authentication or valid source-IP forwarding.
+
+## Source-IP observation tiers (v0.9)
+
+`MergeObservedClientsWithHTTP` unifies recent Xray accepted journal events, current ingress TCP sockets, and matched NGINX combined-log HTTP records by normalized IP. Its evidence tiers are mutually exclusive and ordered XRAY > HTTP > TCP; HTTP-only requests do not create fake authenticated Xray inbound records. Interactive `f` and `--clients-filter` select tiers without changing the collectors. Per-IP TCP ports are shown as network-level observations, never asserted to be authenticated Xray user sessions.

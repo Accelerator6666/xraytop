@@ -28,6 +28,7 @@ type Screen struct {
 	Snapshot      collector.Snapshot
 	History       History
 	View          int
+	ClientFilter string
 	Width, Height int
 	Color         bool
 }
@@ -101,9 +102,10 @@ func (s Screen) Paint() string {
 		add(s.style(" "+title+"  (all configured tags, plus stats-only tags)", bold))
 		add(endpointHeader(inner))
 		addEndpointRows(&lines, rows, max(1, height-len(lines)-4), inner, s.View == 1)
+
 	case 5:
-		add(s.style(" CLIENTS BY SOURCE IP  (TCP + Xray accepted + NGINX HTTP observations)", bold))
-		add(" Source IP                                TCP    Accepted  HTTP     Inbounds / transports           Last seen")
+		add(s.style(" CLIENTS BY SOURCE IP  (Xray accepted / NGINX HTTP / TCP evidence, not identities)", bold))
+		add(" Source IP                               Type  TCP   Xray HTTP  TCP ports         Xray inbound / HTTP route      Seen")
 		if !s.Snapshot.Nginx.CheckedAt.IsZero() {
 			add(fmt.Sprintf(" NGINX auto: %d verified proxy ports / %d Xray inbound routes", len(s.Snapshot.Nginx.Ports), len(s.Snapshot.Nginx.Routes)))
 		}
@@ -112,26 +114,42 @@ func (s Screen) Paint() string {
 		if s.Snapshot.RecentError != "" { add(s.style(" Journal warning: "+s.Snapshot.RecentError,yellow)) }
 		if s.Snapshot.AccessError != "" { add(s.style(" NGINX access: "+s.Snapshot.AccessError, yellow)) }
 		if len(s.Snapshot.Live.Ports)==0 { add(" No TCP ingress ports selected. Check NGINX auto discovery or use --ingress-ports.") }
-		clients:=xray.MergeObservedClients(s.Snapshot.Recent.Sources,s.Snapshot.Catalog,s.Snapshot.Live)
-		if len(clients)==0 {
-			add(" No observed source IPs. A missing record does not prove a client is offline.")
-		} else {
-			limit:=max(1,height-len(lines)-7)
-			for i,client:=range clients {
-				if i>=limit {break}
-				meta:=strings.Join(client.Inbounds,",")
-				if len(client.Transports)>0 {meta+=" ("+strings.Join(client.Transports,",")+")"}
-				if meta=="" {meta="-"}
-				last:="-"
-				if !client.LastSeen.IsZero(){last=client.LastSeen.Local().Format("15:04:05")}
-				http:=0
-				for _,req:=range s.Snapshot.Access.Requests { if req.IP==client.IP {http+=req.Requests} }
-				add(fmt.Sprintf(" %-40s %5d %9d %5d   %-31s %s",truncate(client.IP,40),client.TCPConnections,client.Accepted,http,truncate(meta,31),last))
+		filter:=s.ClientFilter
+		if filter=="" { filter="all" }
+		clients:=xray.MergeObservedClientsWithHTTP(s.Snapshot.Recent.Sources,s.Snapshot.Catalog,s.Snapshot.Live,s.Snapshot.Access)
+		xrayCount,httpCount,tcpCount:=0,0,0
+		for _,client:=range clients {
+			switch client.Evidence() {
+			case "XRAY": xrayCount++
+			case "HTTP": httpCount++
+			case "TCP": tcpCount++
 			}
-			add(fmt.Sprintf(" %d observed IPs | %d TCP ESTABLISHED sockets on selected ingress ports | %d accepted journal events",len(clients),s.Snapshot.Live.Connections,s.Snapshot.Recent.Events))
 		}
-		add(" TCP counts ingress network sockets, NOT Xray user sessions; HTTPS sites may share ports.")
-		add(" NGINX HTTP responses do not prove VLESS authentication; only accepted Xray events indicate proxy activity.")
+		add(fmt.Sprintf(" Filter: %s (press f: all -> xray -> http-only -> tcp-only)  Sources: XRAY %d / HTTP %d / TCP %d", filter,xrayCount,httpCount,tcpCount))
+		shown:=0
+		limit:=max(1,height-len(lines)-7)
+		for _,client:=range clients {
+			if !xray.MatchObservedFilter(client,filter) {continue}
+			if shown>=limit {break}
+			meta:=strings.Join(client.Inbounds,",")
+			if len(client.Transports)>0 {meta+=" ("+strings.Join(client.Transports,",")+")"}
+			if meta=="" && len(client.HTTPRoutes)>0 {meta="HTTP:"+strings.Join(client.HTTPRoutes,",")}
+			if meta=="" {meta="-"}
+			lastSeen:=client.LastSeen
+			if client.HTTPLastSeen.After(lastSeen) {lastSeen=client.HTTPLastSeen}
+			last:="-"
+			if !lastSeen.IsZero() {last=lastSeen.Local().Format("15:04:05")}
+			var ports []string
+			for _,p:=range client.Ports {ports=append(ports,fmt.Sprint(p))}
+			portText:=strings.Join(ports,",")
+			if portText=="" {portText="-"}
+			add(fmt.Sprintf(" %-39s %-4s %4d %6d %4d  %-17s %-29s %s",truncate(client.IP,39),client.Evidence(),client.TCPConnections,client.Accepted,client.HTTPRequests,truncate(portText,17),truncate(meta,29),last))
+			shown++
+		}
+		if shown==0 {add(" No observed source IPs match this filter. This does not prove a client is offline.")}
+		add(fmt.Sprintf(" %d observed IPs | %d TCP ESTABLISHED sockets | %d accepted journal events | %d matched NGINX HTTP requests",len(clients),s.Snapshot.Live.Connections,s.Snapshot.Recent.Events,s.Snapshot.Access.Matched))
+		add(" XRAY=accepted proxy activity; HTTP=matched NGINX request only; TCP=network socket only.")
+		add(" TCP counts ingress network sockets, NOT Xray user sessions; source IP is not unique identity.")
 	case 6:
 		add(s.style(" SOURCE IP + INBOUND  (5-minute accepted activity; NOT online status)", bold))
 		add(" Source IP                                Inbound tag                     Events   TCP    Last seen")
@@ -186,9 +204,9 @@ func (s Screen) Paint() string {
 		lines = lines[:height-2]
 	}
 	add(ruler)
-	footer := " [1] Overview [2] In [3] Out [4] Protocols [5] Transports [6] IP Clients [7] IP+Inbound [8] NGINX [q] Quit"
+	footer := " [1] Overview [2] In [3] Out [4] Protocols [5] Transports [6] IP Clients [7] IP+Inbound [8] NGINX [f] Filter [q] Quit"
 	if inner < 100 {
-		footer = " [1]Home [2]In [3]Out [4]Proto [5]Trans [6]Clients [7]IPs [8]HTTP [q] Quit"
+		footer = " [1]Home [2]In [3]Out [4]Proto [5]Trans [6]Clients [7]IPs [8]HTTP [f]Filter [q] Quit"
 	}
 	add(footer)
 	if s.Color {

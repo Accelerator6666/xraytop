@@ -64,6 +64,27 @@ func TestIPFirstClientsView(t *testing.T) {
 	}
 }
 
+func TestClientIPFilters(t *testing.T) {
+    at:=time.Unix(1791602300,0)
+    snap:=collector.Snapshot{
+        At:at,
+        Recent:xray.RecentActivity{Events:2,Sources:[]xray.RecentSource{{IP:"192.0.2.1",Inbound:"vless-ws",Accepted:2,LastSeen:at}}},
+        Live:xray.LiveTCP{Peers:[]xray.TCPPeer{{IP:"203.0.113.5",Connections:15,Ports:[]uint16{6443}}},Connections:15,Ports:[]uint16{6443}},
+        Access:xray.NginxAccess{Matched:4,Requests:[]xray.NginxRequest{{IP:"198.51.100.9",Inbound:"vless-grpc",Transport:"gRPC",Requests:4,LastSeen:at}}},
+    }
+    all:=(Screen{Width:180,Height:30,View:5,Snapshot:snap,ClientFilter:"all"}).Paint()
+    for _,needle:=range []string{"192.0.2.1","198.51.100.9","203.0.113.5","XRAY","HTTP","TCP","6443","Sources: XRAY 1 / HTTP 1 / TCP 1"} {
+        if !strings.Contains(all,needle) {t.Errorf("missing %q: %s",needle,all)}
+    }
+    for _,tc:=range []struct{filter,ip,excluded string}{
+        {"xray","192.0.2.1","198.51.100.9"},
+        {"http","198.51.100.9","203.0.113.5"},
+        {"tcp","203.0.113.5","192.0.2.1"},
+    } {
+        got:=(Screen{Width:180,Height:30,View:5,Snapshot:snap,ClientFilter:tc.filter}).Paint()
+        if !strings.Contains(got,tc.ip)||strings.Contains(got,tc.excluded){t.Fatalf("wrong filter %s: %s",tc.filter,got)}
+    }
+}
 func TestNGINXAutoStatus(t *testing.T) {
 	snap := collector.Snapshot{At:time.Unix(100,0), Nginx:xray.NginxIngress{CheckedAt:time.Unix(100,0), Ports:[]uint16{1443,2443}, Routes:[]xray.NginxRoute{{Port:1443,Inbound:"vless-grpc"},{Port:2443,Inbound:"vless-grpc"}}}}
 	out := (Screen{Width:130,Height:24,View:5,Snapshot:snap}).Paint()

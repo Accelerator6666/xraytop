@@ -16,6 +16,7 @@ type App struct {
 	Collector *collector.Collector
 	Interval  time.Duration
 	NoColor   bool
+	ClientFilter string
 }
 
 func (a App) Run(ctx context.Context) error {
@@ -77,9 +78,11 @@ func (a App) Run(ctx context.Context) error {
 	current := collector.Snapshot{At: time.Now()}
 	history := History{}
 	view := 0
+	clientFilter := a.ClientFilter
+	if clientFilter=="" {clientFilter="all"}
 	redraw := func() {
 		w, h := terminalSize()
-		fmt.Print(Screen{Snapshot: current, History: history, View: view, Width: w, Height: h, Color: !a.NoColor}.Paint())
+		fmt.Print(Screen{Snapshot: current, History: history, View: view, ClientFilter:clientFilter, Width: w, Height: h, Color: !a.NoColor}.Paint())
 	}
 	redraw()
 	for {
@@ -123,6 +126,15 @@ func (a App) Run(ctx context.Context) error {
 				view = 6
 			case '8':
 				view = 7
+			case 'f', 'F':
+				if view==5 {
+					switch clientFilter {
+					case "all": clientFilter="xray"
+					case "xray": clientFilter="http"
+					case "http": clientFilter="tcp"
+					default: clientFilter="all"
+					}
+				}
 			case 'r', 'R':
 				select {
 				case requests <- struct{}{}:

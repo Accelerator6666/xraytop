@@ -33,7 +33,32 @@ type ObservedClient struct {
     Accepted int
     Inbounds []string
     Transports []string
-    LastSeen time.Time
+    LastSeen time.Time // last accepted Xray event; never populated by HTTP alone
+    HTTPRequests int
+    HTTPSuccess int
+    HTTPLastSeen time.Time
+    HTTPRoutes []string // observed HTTP route metadata, NOT authenticated inbounds
+}
+
+// Evidence intentionally distinguishes proxy activity from HTTP requests and
+// network-level TCP sockets; it never claims a unique person or live session.
+func (c ObservedClient) Evidence() string {
+    if c.Accepted > 0 { return "XRAY" }
+    if c.HTTPRequests > 0 { return "HTTP" }
+    if c.TCPConnections > 0 { return "TCP" }
+    return "-"
+}
+
+// MatchObservedFilter is used by the interactive f key and --clients-filter.
+// The HTTP and TCP filters select their *exclusive* observation tier.
+func MatchObservedFilter(c ObservedClient, filter string) bool {
+    switch filter {
+    case "", "all": return true
+    case "xray": return c.Accepted > 0
+    case "http": return c.Accepted == 0 && c.HTTPRequests > 0
+    case "tcp": return c.Accepted == 0 && c.HTTPRequests == 0 && c.TCPConnections > 0
+    default: return false
+    }
 }
 
 func ParseIngressPorts(raw string) ([]uint16, error) {
@@ -130,9 +155,14 @@ func parseTCPEndpoint(raw string,ipv6 bool)(netip.AddrPort,error){
     return netip.AddrPortFrom(netip.AddrFrom16(bytes),uint16(port)),nil
 }
 
-// Joining by source IP is only a UI convenience. It NEVER proves that an
-// ESTABLISHED ingress socket corresponds to an accepted Xray request.
-func MergeObservedClients(sources []RecentSource,catalog Catalog,live LiveTCP) []ObservedClient {
+// Joining by source IP is a presentation convenience and never proves that
+// TCP sockets or HTTP responses correspond to authenticated Xray requests.
+// Preserve the older API for existing callers/tests.
+func MergeObservedClients(sources []RecentSource, catalog Catalog, live LiveTCP) []ObservedClient {
+    return MergeObservedClientsWithHTTP(sources,catalog,live,NginxAccess{})
+}
+
+func MergeObservedClientsWithHTTP(sources []RecentSource, catalog Catalog, live LiveTCP, access NginxAccess) []ObservedClient {
     groups:=make(map[string]*ObservedClient)
     for _,src:=range GroupSourcesByIP(sources,catalog) {
         groups[src.IP]=&ObservedClient{IP:src.IP,Accepted:src.Accepted,Inbounds:src.Inbounds,Transports:src.Transports,LastSeen:src.LastSeen}
@@ -143,13 +173,43 @@ func MergeObservedClients(sources []RecentSource,catalog Catalog,live LiveTCP) [
         row.TCPConnections+=peer.Connections
         row.Ports=append([]uint16(nil),peer.Ports...)
     }
+    routes:=make(map[string]map[string]bool)
+    for _,req:=range access.Requests {
+        if req.IP=="" || req.Requests<=0 {continue}
+        row:=groups[req.IP]
+        if row==nil {row=&ObservedClient{IP:req.IP};groups[req.IP]=row}
+        row.HTTPRequests+=req.Requests
+        row.HTTPSuccess+=req.SuccessHTTP
+        if req.LastSeen.After(row.HTTPLastSeen) {row.HTTPLastSeen=req.LastSeen}
+        if routes[req.IP]==nil {routes[req.IP]=make(map[string]bool)}
+        if req.Inbound!="" {routes[req.IP][req.Inbound]=true}
+    }
     out:=make([]ObservedClient,0,len(groups))
-    for _,row:=range groups {out=append(out,*row)}
-    sort.Slice(out,func(i,j int)bool {
+    for _,row:=range groups {
+        for tag:=range routes[row.IP] {row.HTTPRoutes=append(row.HTTPRoutes,tag)}
+        sort.Strings(row.HTTPRoutes)
+        out=append(out,*row)
+    }
+    priority:=func(row ObservedClient) int {
+        if row.Accepted>0 {return 3}
+        if row.HTTPRequests>0 {return 2}
+        if row.TCPConnections>0 {return 1}
+        return 0
+    }
+    sort.Slice(out,func(i,j int)bool{
         a,b:=out[i],out[j]
-        if (a.TCPConnections>0)!=(b.TCPConnections>0) {return a.TCPConnections>0}
-        if a.TCPConnections!=b.TCPConnections {return a.TCPConnections>b.TCPConnections}
-        if !a.LastSeen.Equal(b.LastSeen) {return a.LastSeen.After(b.LastSeen)}
+        if priority(a)!=priority(b) {return priority(a)>priority(b)}
+        // Within the Xray tier, prefer recent accepted activity; within HTTP
+        // use recent request time; and only TCP sources sort by open sockets.
+        if a.Accepted>0 {
+            if !a.LastSeen.Equal(b.LastSeen) {return a.LastSeen.After(b.LastSeen)}
+            if a.Accepted!=b.Accepted {return a.Accepted>b.Accepted}
+        } else if a.HTTPRequests>0 {
+            if !a.HTTPLastSeen.Equal(b.HTTPLastSeen) {return a.HTTPLastSeen.After(b.HTTPLastSeen)}
+            if a.HTTPRequests!=b.HTTPRequests {return a.HTTPRequests>b.HTTPRequests}
+        } else if a.TCPConnections!=b.TCPConnections {
+            return a.TCPConnections>b.TCPConnections
+        }
         return a.IP<b.IP
     })
     return out

@@ -4,7 +4,7 @@
 
 **XrayTop** 是一个用于 **Linux 本机 Xray-core** 的只读终端监控程序，支持按**代理协议**和**传输方式**独立查看统计信息。适合同时运行 VLESS + gRPC、VLESS + WebSocket、VLESS + XHTTP、VMess、Trojan 等入站的服务器；可识别 NGINX 反代后连接 Xray 的 Unix Socket 监听路径。
 
-> **v0.8.0-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
+> **v0.9.0-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
 
 ## 工作原理
 
@@ -169,3 +169,19 @@ Unix Socket 或回环 TCP 入站监听地址准确匹配，才会加入 TCP 采�
 ```
 
 第 6 页提供来源 IP 的 Xray accepted、当前 TCP 和 NGINX HTTP 请求次数；第 8 页展示最近 5 分钟按 IP、Inbound、传输类型统计的 HTTP 请求数量、101/200 响应数量。**成功的 HTTP 101/200 并不代表成功的 VLESS 身份验证，只有 Xray accepted 日志反映代理请求通过 Xray 的处理**。默认 combined 日志未记录入口 TCP 端口，若同一路径在不同虚拟主机匹配不同 Xray 入站，工具会跳过无法唯一判断的归类。日志超过 2 MiB 的旧记录可能被跳过，故统计不一定覆盖完整 5 分钟。不能按普通 HTTP 响应字节数计算每 IP 的代理流量。
+
+## 客户端 IP 证据分层及筛选（v0.9）
+
+第 `6` 页将全部来源 IP 严格分成三类，按 **XRAY → HTTP → TCP** 排列：
+- `XRAY`：最近 5 分钟 Xray systemd 日志中有 accepted 记录（代理活动证据；不等于仍在线）。
+- `HTTP`：只在匹配 Xray 路由的 NGINX combined 日志中出现（HTTP 请求证据；不代表 VLESS 认证）。
+- `TCP`：只有当前入口端口上 `ESTABLISHED` 网络连接（不代表代理客户端）。
+
+这三个状态按最强可用证据互斥划分；**新增了之前遗漏的 NGINX-only 来源 IP**。第 6 页增加当前 TCP 入口端口列，多个端口会合并显示。Xray 日志的 Inbound 与 NGINX-only 的 HTTP 路由不会混为已认证身份。按 `f` 可循环过滤：`all → xray → http → tcp`，也可启动时指定：
+
+```bash
+./xraytop --config /usr/local/etc/xray/config.json --clients-filter xray
+./xraytop --once --once-view 6 --clients-filter http
+```
+
+`xray` 表示有 accepted 代理请求记录；`http` / `tcp` 仅展示没有更高级证据的 IP。不同 IP 可能来自同一用户，共享 IP 也可能代表多位用户。所有统计仍只读本机，不需要 email，也无需修改或重启 Xray/NGINX。
