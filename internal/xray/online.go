@@ -99,6 +99,9 @@ func (c Client) QueryOnline(ctx context.Context) (OnlineSnapshot, error) {
 		}
 	}
 	result.Users = compact
+	if result.Failed > 0 && len(result.Users) == 0 {
+		return result, fmt.Errorf("online IP queries failed for %d user(s)", result.Failed)
+	}
 	return result, nil
 }
 

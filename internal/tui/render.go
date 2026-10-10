@@ -102,6 +102,26 @@ func (s Screen) Paint() string {
 		add(s.style(" "+title+"  (all configured tags, plus stats-only tags)", bold))
 		add(endpointHeader(inner))
 		addEndpointRows(&lines, rows, max(1, height-len(lines)-4), inner, s.View == 1)
+	case 6:
+		add(s.style(" RECENT ACCEPTED SOURCE IPs  (last 5 minutes; NOT live sessions)", bold))
+		add(" Observed IP                              Inbound tag                     Accepted   Last seen")
+		if s.Snapshot.RecentError != "" {
+			add(s.style(" Journal: "+s.Snapshot.RecentError, yellow))
+		} else if s.Snapshot.Recent.CheckedAt.IsZero() {
+			add(" Recent-source journal collector disabled or waiting for first sample.")
+		} else if len(s.Snapshot.Recent.Sources) == 0 {
+			add(" No recent accepted log entries. This does NOT prove no clients connected.")
+			add(" Enable Xray access logs in journald or pass --journal-unit <unit>.")
+		} else {
+			for i, row := range s.Snapshot.Recent.Sources {
+				if i >= max(1, height-len(lines)-5) {
+					break
+				}
+				add(fmt.Sprintf(" %-40s %-30s %8d   %s", truncate(row.IP, 40), truncate(row.Inbound, 30), row.Accepted, row.LastSeen.Local().Format("15:04:05")))
+			}
+			add(fmt.Sprintf(" %d accepted events / %d source+inbound groups (journal, last 5m)", s.Snapshot.Recent.Events, len(s.Snapshot.Recent.Sources)))
+			add(" Recent activity is not online status; a single IP may represent multiple users.")
+		}
 	case 5:
 		add(s.style(" ONLINE USERS / SOURCE IP  (Xray live online map)", bold))
 		add(" User (client email)                         Source IP                 Last activity")
@@ -169,7 +189,11 @@ func (s Screen) Paint() string {
 		lines = lines[:height-2]
 	}
 	add(ruler)
-	add(" [1] Overview [2] In [3] Out [4] Protocols [5] Transports [6] Users [q] Quit")
+	footer := " [1] Overview [2] In [3] Out [4] Protocols [5] Transports [6] Users [7] Recent IPs [q] Quit"
+	if inner < 100 {
+		footer = " [1]Home [2]In [3]Out [4]Proto [5]Trans [6]Users [7]IPs [q] Quit"
+	}
+	add(footer)
 	if s.Color {
 		return "\x1b[H" + strings.Join(lines, "\x1b[K\r\n") + "\x1b[J"
 	}

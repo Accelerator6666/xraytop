@@ -56,3 +56,16 @@ func TestOnlineUsersView(t *testing.T) {
 		t.Fatal("unsafe escape preserved")
 	}
 }
+
+func TestRecentSourceView(t *testing.T) {
+	snapshot := collector.Snapshot{At: time.Unix(1791602300, 0), Recent: xray.RecentActivity{
+		CheckedAt: time.Unix(1791602300, 0), Events: 3,
+		Sources: []xray.RecentSource{{IP: "192.0.2.5", Inbound: "vless-ws", Accepted: 3, LastSeen: time.Unix(1791602211, 0)}},
+	}}
+	out := (Screen{Width: 110, Height: 24, View: 6, Snapshot: snapshot}).Paint()
+	for _, want := range []string{"RECENT ACCEPTED", "192.0.2.5", "vless-ws", "NOT live sessions"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q: %s", want, out)
+		}
+	}
+}

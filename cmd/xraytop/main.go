@@ -14,7 +14,7 @@ import (
 	"github.com/Accelerator6666/xraytop/internal/xray"
 )
 
-var version = "v0.3.0-dev"
+var version = "v0.4.0-dev"
 
 // configPaths supports repeated --config arguments for multi-file setups.
 type configPaths []string
@@ -31,6 +31,8 @@ func main() {
 	binary := flag.String("xray-bin", "xray", "path to xray executable used for statsquery")
 	interval := flag.Duration("interval", 2*time.Second, "monitor polling interval (minimum 1s)")
 	once := flag.Bool("once", false, "print one plain snapshot and exit")
+	onceView := flag.Int("once-view", 1, "view number used with --once (1-7)")
+	journal := flag.String("journal-unit", "xray", "systemd unit for recent accepted source-IP records (empty disables)")
 	noColor := flag.Bool("no-color", false, "disable ANSI colors")
 	flag.Parse()
 	if *versionFlag {
@@ -41,16 +43,20 @@ func main() {
 		fmt.Fprintln(os.Stderr, "xraytop only supports Linux")
 		os.Exit(1)
 	}
+	if *onceView < 1 || *onceView > 7 {
+		fmt.Fprintln(os.Stderr, "--once-view must be between 1 and 7")
+		os.Exit(2)
+	}
 	if *interval < time.Second {
 		fmt.Fprintln(os.Stderr, "--interval must be at least 1s")
 		os.Exit(2)
 	}
-	c := &collector.Collector{Client: xray.Client{Binary: *binary, Server: *api}, ConfigFiles: configs, ConfigDir: *configDir}
+	c := &collector.Collector{Client: xray.Client{Binary: *binary, Server: *api}, ConfigFiles: configs, ConfigDir: *configDir, JournalUnit: *journal}
 	if *once {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		snap := c.Sample(ctx)
-		fmt.Print(tui.Screen{Snapshot: snap, Width: 100, Height: 20, View: 0, Color: false}.Paint(), "\n")
+		fmt.Print(tui.Screen{Snapshot: snap, Width: 100, Height: 24, View: *onceView - 1, Color: false}.Paint(), "\n")
 		return
 	}
 	app := tui.App{Collector: c, Interval: *interval, NoColor: *noColor || os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb"}

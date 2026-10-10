@@ -4,7 +4,7 @@
 
 **XrayTop** 是一个用于 **Linux 本机 Xray-core** 的只读终端监控程序，支持按**代理协议**和**传输方式**独立查看统计信息。适合同时运行 VLESS + gRPC、VLESS + WebSocket、VLESS + XHTTP、VMess、Trojan 等入站的服务器；可识别 NGINX 反代后连接 Xray 的 Unix Socket 监听路径。
 
-> **v0.3.0-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
+> **v0.4.0-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
 
 ## 工作原理
 
@@ -53,7 +53,7 @@ go build -o xraytop ./cmd/xraytop
 
 - `api.services` 包含 `StatsService`，并确保有本地 API 入站以及指向 `api` 出站的路由；
 - `stats: {}` 和 `policy.system.statsInboundUplink/statsInboundDownlink/statsOutboundUplink/statsOutboundDownlink: true`；
-- 若需要用户级统计，还需要相应 `policy.levels` 和客户 `email`（当前版本未在 UI 呈现用户统计）。
+- 若需要用户级统计，还需要相应 `policy.levels` 和客户 `email`（`6` 页面使用在线用户列表）。
 
 验证：
 
@@ -113,3 +113,26 @@ xray api statsonlineiplist --server=127.0.0.1:10085 --email='your-client-email'
 ```
 
 **注意：** 列出的 IP 是 Xray 看到的来源地址，NGINX 反代可能隐藏真实客户端 IP；需要正确设置可信代理转发链。Xray 的在线图会忽略回环源 IP，出现“有流量、在线列表却为空”并不必然是故障。在线 IP 数不是 TCP 连接数。仅显示真实 API 数据，无法读取时会提示“未知”，绝不将近期活动用户误报为当前在线用户。
+
+
+## 最近连接来源 IP（新增按键 `7`）
+
+即使还没有配置 `statsUserOnline` 或客户端没有独立的 `email`，也可以用**本机 systemd 日志**观察最近连接来源。XrayTop 读取本机 `xray` unit 的最近 5 分钟日志，只提取 **accepted** 的 IP、入站 Tag、记录次数和最后记录时间；过滤 rejected/无效 IP，不会读取或展示 UUID。默认每约 10 秒刷新。
+
+```bash
+# 按键 7，最近 5 分钟来源 IP
+./xraytop --config /usr/local/etc/xray/config.json --api 127.0.0.1:10085
+
+# 无需全屏界面，直接打印最近连接来源 IP
+./xraytop --once --once-view 7 --config /usr/local/etc/xray/config.json
+
+# 如 Xray 的 systemd unit 名称不同
+./xraytop --journal-unit xray@one.service
+
+# 禁止读取本机 systemd 日志
+./xraytop --journal-unit ''
+```
+
+**请区分两种信息：** `6` 页是 Xray 在线统计，属于 Xray 当前在线映射；`7` 页是**最近连接日志**，不证明当前在线、不识别具体账号。一个来源 IP 可以是 NAT 下多个用户，若 NGINX 未正确传递真实来源 IP，日志与在线统计也可能只看到反向代理 IP。
+
+默认只读、不修改 Xray 或 NGINX 配置，无需开启额外 TCP 端口。需要有本机 systemd journal 的读取权限。若出现“没有最近连接”，请先确认 `journalctl -u xray -n 20 --no-pager` 是否包含接受连接日志。

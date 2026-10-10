@@ -4,7 +4,7 @@
 
 **XrayTop** is a Linux-only, read-only terminal monitor for a **local Xray-core process**, with btop-inspired terminal views and protocol-aware inbound/outbound statistics. It supports mixed VLESS, VMess, Trojan, etc. configurations over WebSocket, gRPC, XHTTP, RAW/TCP, HTTPUpgrade, mKCP and more, including Unix-domain socket listeners behind nginx.
 
-> **v0.3.0-dev preview:** multi-protocol config discovery, process CPU/RSS, tagged inbound/outbound traffic, protocol and transport traffic aggregation, and terminal charts are implemented. Native gRPC client, nginx access-log correlation and per-user sessions are not implemented yet.
+> **v0.4.0-dev preview:** multi-protocol config discovery, process CPU/RSS, tagged inbound/outbound traffic, protocol and transport traffic aggregation, and terminal charts are implemented. Native gRPC client, nginx access-log correlation and per-user sessions are not implemented yet.
 
 ## How monitoring works
 
@@ -67,15 +67,28 @@ go vet ./...
 
 GitHub Actions runs tests and cross-compiles Linux amd64/arm64. See [architecture](docs/ARCHITECTURE.md). MIT License.
 
-> Compatibility: Xray 26.3.27 may omit `value` for zero-byte counters; XrayTop v0.3.0-dev correctly interprets them as zero.
+> Compatibility: Xray 26.3.27 may omit `value` for zero-byte counters; XrayTop v0.4.0-dev correctly interprets them as zero.
 
 
 ## Live user / source IP view (`6`)
 
-XrayTop v0.3.0-dev reads Xray's non-resetting `statsgetallonlineusers` and
+XrayTop v0.4.0-dev reads Xray's non-resetting `statsgetallonlineusers` and
 `statsonlineiplist` local API commands. Requires `policy.levels.<level>.statsUserOnline=true`
 and unique client `email` labels. The live user list refreshes approximately
 every 6 seconds. If Xray is behind NGINX, the reported IP may be the proxy's
 address rather than the original client; verify trusted real-IP forwarding.
 Xray's online map excludes loopback sources. An empty online map is **not**
 evidence that nobody is connected.
+
+
+## Recent accepted source addresses — key `7`
+
+The optional read-only journald collector checks the local `xray` systemd unit (the last 5 minutes, up to 500 entries, refreshed approximately every 10 seconds) and groups accepted connections by **observed source IP** and **inbound tag**. It does not consider rejected authentication attempts. This is **recent activity, not proof of an active session** and not a mapping of IPs to Xray client identities.
+
+```sh
+./xraytop --once --once-view 7 --config /usr/local/etc/xray/config.json
+./xraytop --journal-unit xray.service
+./xraytop --journal-unit ''  # disable the journal collector
+```
+
+For user-to-IP mapping when available, enable `statsUserOnline` for the applicable client level and assign unique client `email` identifiers. Use key `6` to query Xray's live online map. Where NGINX intermediates connections, Xray-reported addresses may represent the proxy rather than the original client.
