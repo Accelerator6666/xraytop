@@ -15,6 +15,47 @@ func TestParseStats(t *testing.T) {
 		t.Fatal("expected invalid counter error")
 	}
 }
+// Xray 26.3.27 omits the value field for idle counters.
+func TestParseStatsOmittedZeroValues(t *testing.T) {
+	data := []byte(`{"stat":[
+	  {"name":"outbound>>>blocked>>>traffic>>>uplink"},
+	  {"name":"outbound>>>tw>>>traffic>>>downlink"},
+	  {"name":"outbound>>>jp>>>traffic>>>uplink","value":null},
+	  {"name":"inbound>>>vless-ws>>>traffic>>>uplink","value":42898},
+	  {"name":"inbound>>>vless-ws>>>traffic>>>downlink","value":50733},
+	  {"name":"inbound>>>vless-grpc>>>traffic>>>uplink","value":5181},
+	  {"name":"inbound>>>vless-grpc>>>traffic>>>downlink","value":5832},
+	  {"name":"outbound>>>direct>>>traffic>>>uplink","value":"44570"}
+	]}`)
+	stats, err := ParseStats(data)
+	if err != nil {
+		t.Fatalf("parse Xray 26.3.27 statsquery: %v", err)
+	}
+	if len(stats) != 8 {
+		t.Fatalf("got %d counters, want 8", len(stats))
+	}
+	for _, name := range []string{
+		"outbound>>>blocked>>>traffic>>>uplink",
+		"outbound>>>tw>>>traffic>>>downlink",
+		"outbound>>>jp>>>traffic>>>uplink",
+	} {
+		if v, ok := stats[name]; !ok || v != 0 {
+			t.Errorf("zero counter %q: value=%d present=%v", name, v, ok)
+		}
+	}
+	if stats["outbound>>>direct>>>traffic>>>uplink"] != 44570 {
+		t.Fatal("nonzero outbound data lost")
+	}
+	var sampler Sampler
+	summary := sampler.Update(time.Unix(100, 0), stats)
+	if summary.UpTotal != 48079 || summary.DownTotal != 56565 {
+		t.Errorf("got totals up=%d down=%d, want 48079/56565", summary.UpTotal, summary.DownTotal)
+	}
+	if len(summary.Outbound) != 4 {
+		t.Errorf("got %d outbound rows, want 4", len(summary.Outbound))
+	}
+}
+
 func TestSampler(t *testing.T) {
 	first := Stats{"inbound>>>A>>>traffic>>>downlink": 100, "outbound>>>B>>>traffic>>>downlink": 100, "inbound>>>A>>>traffic>>>uplink": 30}
 	second := Stats{"inbound>>>A>>>traffic>>>downlink": 250, "outbound>>>B>>>traffic>>>downlink": 250, "inbound>>>A>>>traffic>>>uplink": 50}

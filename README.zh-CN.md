@@ -4,7 +4,7 @@
 
 **XrayTop** 是一个用于 **Linux 本机 Xray-core** 的只读终端监控程序，支持按**代理协议**和**传输方式**独立查看统计信息。适合同时运行 VLESS + gRPC、VLESS + WebSocket、VLESS + XHTTP、VMess、Trojan 等入站的服务器；可识别 NGINX 反代后连接 Xray 的 Unix Socket 监听路径。
 
-> **v0.2.0-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每个用户的会话关联。**无需修改现有代理入站协议**。
+> **v0.2.1-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每个用户的会话关联。**无需修改现有代理入站协议**。
 
 ## 工作原理
 
@@ -61,6 +61,8 @@ go build -o xraytop ./cmd/xraytop
 xray api statsquery -s 127.0.0.1:10085
 ./xraytop --api 127.0.0.1:10085 --config /usr/local/etc/xray/config.json
 ```
+
+Xray 26.3.27 在零流量计数时可能省略 `value` 字段；XrayTop 会将此类计数器记为 **0 B**，不会误判为 API 故障。
 
 目前由 Xray 自带的 `xray api statsquery` 子命令调用 StatsService（需要服务器上可执行 `xray`）。`--xray-bin /path/to/xray` 可指定二进制。计划后续升级到**原生 gRPC 客户端**，降低周期性子进程开销；这个 API 仍然兼容所有代理协议。
 

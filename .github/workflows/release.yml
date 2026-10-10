@@ -4,7 +4,10 @@ on:
   push:
     branches: [main]
     paths:
-      - .github/workflows/release.yml
+      - 'internal/**'
+      - 'cmd/**'
+      - 'go.mod'
+      - '.github/workflows/release.yml'
 
 permissions:
   contents: write
@@ -33,13 +36,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v0.2.0-dev"
+          TAG="v0.2.1-dev"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/xraytop-linux-amd64 dist/xraytop-linux-arm64 dist/SHA256SUMS --clobber
           else
             gh release create "$TAG" dist/xraytop-linux-amd64 dist/xraytop-linux-arm64 dist/SHA256SUMS \
               --target "$GITHUB_SHA" \
-              --title "XrayTop v0.2.0-dev" \
-              --notes "Local-only, multi-protocol Xray monitoring preview. Linux amd64 / arm64 static binaries, checksum file included." \
+              --title "XrayTop v0.2.1-dev" \
+              --notes "Fix missing zero-byte values in Xray 26.3.27 StatsService output. Local-only multi-protocol monitor." \
               --prerelease
           fi

@@ -87,6 +87,12 @@ func ParseStats(data []byte) (Stats, error) {
 	}
 	result := make(Stats, len(response.Stat))
 	for _, s := range response.Stat {
+		// Proto3 JSON omits zero-valued scalars. Xray statsquery may return
+		// a counter with only its name. Treat absent or null value as zero.
+		if s.Value == "" {
+			result[s.Name] = 0
+			continue
+		}
 		value, err := strconv.ParseInt(s.Value.String(), 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("invalid counter for %q: %w", s.Name, err)
