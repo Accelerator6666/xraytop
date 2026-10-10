@@ -4,7 +4,7 @@
 
 **XrayTop** is a Linux-only, read-only terminal monitor for a **local Xray-core process**, with btop-inspired terminal views and protocol-aware inbound/outbound statistics. It supports mixed VLESS, VMess, Trojan, etc. configurations over WebSocket, gRPC, XHTTP, RAW/TCP, HTTPUpgrade, mKCP and more, including Unix-domain socket listeners behind nginx.
 
-> **v0.9.0-dev preview:** multi-protocol config discovery, process CPU/RSS, tagged inbound/outbound traffic, protocol and transport traffic aggregation, and terminal charts are implemented. Native gRPC client, nginx access-log correlation and per-user sessions are not implemented yet.
+> **v0.10.0-dev preview:** multi-protocol config discovery, process CPU/RSS, tagged inbound/outbound traffic, protocol and transport traffic aggregation, and terminal charts are implemented. Native gRPC client, nginx access-log correlation and per-user sessions are not implemented yet.
 
 ## How monitoring works
 
@@ -128,3 +128,23 @@ View `8` reads at most the last 2 MiB of the local NGINX **combined** access log
 ## Source-IP evidence tiers and filtering (v0.9)
 
 View `6` includes **NGINX-only IPs** even when neither Xray journald nor TCP snapshots contain them. It ranks sources by evidence tier: `XRAY` accepted journal activity, `HTTP` matched NGINX requests only, `TCP` ingress sockets only. These tiers do not represent logged-in users or an authenticated live-session count. Ports shown are TCP listener ports for that source IP, not verified Xray inbound associations. Press `f` to cycle `all → xray → http → tcp`, or pass `--clients-filter xray` (also usable with `--once --once-view 6`). The HTTP-only tier does not populate Xray-authenticated inbound metadata.
+
+
+## Local source-IP history (v0.10; key 9)
+
+The monitor samples per-IP TCP ESTABLISHED sockets and the last-5-minute Xray accepted /
+NGINX matched HTTP counters **once per minute**. A small atomic JSON file at
+`~/.local/state/xraytop/ip-history.json` (or `$XDG_STATE_HOME/xraytop/`) stores
+the last **24 hours**, at most **128 IPs**, max **16 MiB**, mode **0600**.
+Override with `--history-file PATH`; disable with `--history-file ''`.
+No UUIDs, visited sites, full log lines, headers or URL queries are persisted.
+
+Press `9` for history; `j/k` or arrow keys select IP, `Enter` toggles details,
+`t` cycles 5/15/30/60-minute trends and `s` cycles sorting
+(recent, peak TCP, latest TCP, recent Xray accepted count).
+`--once --once-view 9` prints the history overview.
+
+A blank/middle dot means no sample was taken; a zero bar means a sampled zero.
+Xray and NGINX counts are rolling 5-minute values at each snapshot, not
+per-minute new events. Do not sum them or infer authenticated session lifetime
+or a unique person from a public IP. History only accumulates while XrayTop runs.

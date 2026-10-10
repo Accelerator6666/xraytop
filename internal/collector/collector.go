@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/Accelerator6666/xraytop/internal/history"
 	"github.com/Accelerator6666/xraytop/internal/system"
 	"github.com/Accelerator6666/xraytop/internal/xray"
 )
@@ -16,6 +17,8 @@ type Snapshot struct {
 	CPU          float64
 	APIError     string
 	APIEnabled   bool
+	IPHistory    []history.Summary
+	HistoryError string
 	Recent       xray.RecentActivity
 	Live         xray.LiveTCP
 	Nginx        xray.NginxIngress
@@ -40,6 +43,7 @@ type Collector struct {
 	IngressPorts []uint16
 	NginxAuto bool
 	NginxAccessPath string
+	HistoryStore *history.Store
 	accessCache xray.NginxAccess
 	accessError string
 	nextAccess time.Time
@@ -156,6 +160,13 @@ func (c *Collector) Sample(ctx context.Context) Snapshot {
 		c.nextAccess = time.Now().Add(10*time.Second)
 	}
 	snap.Access, snap.AccessError = c.accessCache, c.accessError
+	// One bounded local snapshot per minute, keyed by observed source IP.
+	// Xray/NGINX counts are rolling 5-minute observations, not deltas.
+	if c.HistoryStore != nil {
+		clients := xray.MergeObservedClientsWithHTTP(snap.Recent.Sources,snap.Catalog,snap.Live,snap.Access)
+		if e := c.HistoryStore.Observe(now,clients); e != nil {snap.HistoryError=e.Error()}
+		snap.IPHistory = c.HistoryStore.Summaries()
+	}
 	snap.Inbounds = xray.JoinEndpoints(snap.Catalog.Inbounds, snap.Traffic.Inbound)
 	snap.Outbounds = xray.JoinEndpoints(snap.Catalog.Outbounds, snap.Traffic.Outbound)
 	return snap

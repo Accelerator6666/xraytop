@@ -10,11 +10,12 @@ import (
 	"time"
 
 	"github.com/Accelerator6666/xraytop/internal/collector"
+	"github.com/Accelerator6666/xraytop/internal/history"
 	"github.com/Accelerator6666/xraytop/internal/tui"
 	"github.com/Accelerator6666/xraytop/internal/xray"
 )
 
-var version = "v0.9.0-dev"
+var version = "v0.10.0-dev"
 
 // configPaths supports repeated --config arguments for multi-file setups.
 type configPaths []string
@@ -31,12 +32,13 @@ func main() {
 	binary := flag.String("xray-bin", "xray", "path to xray executable used for statsquery")
 	interval := flag.Duration("interval", 2*time.Second, "monitor polling interval (minimum 1s)")
 	once := flag.Bool("once", false, "print one plain snapshot and exit")
-	onceView := flag.Int("once-view", 1, "view number used with --once (1-8; 6=source IPs, 7=IP+inbound, 8=NGINX requests)")
+	onceView := flag.Int("once-view", 1, "view number used with --once (1-9; 6=source IPs, 7=IP+inbound, 8=NGINX requests, 9=IP history)")
 	journal := flag.String("journal-unit", "xray", "systemd unit for recent accepted source-IP records (empty disables)")
 	portsFlag := flag.String("ingress-ports", "", "manual ingress TCP ports; overrides NGINX discovery (e.g. 443,8964)")
 	nginxAuto := flag.Bool("nginx-auto", true, "discover matching Xray ingress ports from local nginx -T (disabled by --ingress-ports or --nginx-auto=false)")
 	nginxAccess := flag.String("nginx-access-log", "/var/log/nginx/access.log", "local NGINX combined access log for optional source IP/route observations (empty disables)")
 	clientFilter := flag.String("clients-filter", "all", "source IP filter for view 6: all|xray|http|tcp (f cycles in the TUI)")
+	historyFile := flag.String("history-file", history.DefaultPath(), "local private 24h IP snapshot JSON file (empty disables history)")
 	noColor := flag.Bool("no-color", false, "disable ANSI colors")
 	flag.Parse()
 	if *versionFlag {
@@ -47,8 +49,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, "xraytop only supports Linux")
 		os.Exit(1)
 	}
-	if *onceView < 1 || *onceView > 8 {
-		fmt.Fprintln(os.Stderr, "--once-view must be between 1 and 8")
+	if *onceView < 1 || *onceView > 9 {
+		fmt.Fprintln(os.Stderr, "--once-view must be between 1 and 9")
 		os.Exit(2)
 	}
 	if *interval < time.Second {
@@ -63,7 +65,13 @@ func main() {
 	}
 	ports, err := xray.ParseIngressPorts(*portsFlag)
 	if err != nil { fmt.Fprintln(os.Stderr, "xraytop:", err); os.Exit(2) }
-	c := &collector.Collector{Client: xray.Client{Binary: *binary, Server: *api}, ConfigFiles: configs, ConfigDir: *configDir, JournalUnit: *journal, IngressPorts: ports, NginxAuto: *nginxAuto, NginxAccessPath: *nginxAccess}
+	var historyStore *history.Store
+	if *historyFile != "" {
+		var e error
+		historyStore,e = history.Open(*historyFile)
+		if e!=nil {fmt.Fprintln(os.Stderr,"xraytop: history:",e);os.Exit(1)}
+	}
+	c := &collector.Collector{Client: xray.Client{Binary: *binary, Server: *api}, ConfigFiles: configs, ConfigDir: *configDir, JournalUnit: *journal, IngressPorts: ports, NginxAuto: *nginxAuto, NginxAccessPath: *nginxAccess, HistoryStore: historyStore}
 	if *once {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()

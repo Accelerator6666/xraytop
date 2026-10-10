@@ -4,7 +4,7 @@
 
 **XrayTop** 是一个用于 **Linux 本机 Xray-core** 的只读终端监控程序，支持按**代理协议**和**传输方式**独立查看统计信息。适合同时运行 VLESS + gRPC、VLESS + WebSocket、VLESS + XHTTP、VMess、Trojan 等入站的服务器；可识别 NGINX 反代后连接 Xray 的 Unix Socket 监听路径。
 
-> **v0.9.0-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
+> **v0.10.0-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
 
 ## 工作原理
 
@@ -185,3 +185,33 @@ Unix Socket 或回环 TCP 入站监听地址准确匹配，才会加入 TCP 采�
 ```
 
 `xray` 表示有 accepted 代理请求记录；`http` / `tcp` 仅展示没有更高级证据的 IP。不同 IP 可能来自同一用户，共享 IP 也可能代表多位用户。所有统计仍只读本机，不需要 email，也无需修改或重启 Xray/NGINX。
+
+
+## 来源 IP 历史与趋势（v0.10，按键 9）
+
+默认将观察到的来源 IP（只存 IP + TCP 数量、Xray 最近 5 分钟 accepted 次数、
+NGINX 最近 5 分钟匹配请求次数及采样时间）保存在运行用户私有目录：
+`~/.local/state/xraytop/ip-history.json`，或 `$XDG_STATE_HOME/xraytop/ip-history.json`。
+每分钟采样一次，保存 **最近 24 小时**，最多 **128 个来源 IP**；
+单个历史文件最大 16 MiB；原子覆盖写入，权限 **0600**。
+不会保存 UUID、目标网址、URL 参数、请求头或日志原文。
+
+`9` 为历史概览，`j/k` 或上下方向键选择 IP，按 `Enter` 展开/关闭详情，
+`t` 切换 5/15/30/60 分钟趋势，`s` 依次按最近活动、24h TCP 峰值、
+当前 TCP、最近一条采样的 Xray accepted 数排序；按 `q` 退出。
+
+```bash
+./xraytop --config /usr/local/etc/xray/config.json
+./xraytop --once --once-view 9 --config /usr/local/etc/xray/config.json
+# 禁用历史写入
+./xraytop --history-file ''
+# 指定其他本地历史文件
+./xraytop --history-file /root/.local/state/xraytop/my-history.json
+```
+
+**计量解释：** 每分钟的 TCP 是采样瞬间的 ESTABLISHED 数；
+Xray 与 HTTP 是**当时最近 5 分钟的滚动事件数量**，不可跨分钟简单求和。
+`·` 表示没有采样（程序未运行或未能记录），`▁` 表示采样值为零。
+首次发现/最后活动指 XrayTop 在此保留期内观察到该 IP 的时间，
+不证明该 IP 唯一对应某用户，也不能证明在线 VLESS 会话。
+历史只在 XrayTop 运行时积累；关闭后不会在后台独立收集。

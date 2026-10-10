@@ -29,6 +29,10 @@ type Screen struct {
 	History       History
 	View          int
 	ClientFilter string
+	HistoryWindow int
+	HistoryIndex int
+	HistoryDetail bool
+	HistorySort string
 	Width, Height int
 	Color         bool
 }
@@ -187,6 +191,8 @@ func (s Screen) Paint() string {
 		add(fmt.Sprintf(" Matched %d / %d recent HTTP requests (last 2 MiB of access.log)",s.Snapshot.Access.Matched,s.Snapshot.Access.Total))
 		if s.Snapshot.Access.Truncated {add(" Bounded log tail: earlier requests may be omitted, even within the 5-min window.")}
 		add(" 101/200 means successful HTTP handshake/response, NOT an authenticated VLESS session.")
+	case 8:
+		for _,line:=range s.historyLines(inner,max(1,height-len(lines)-4)) {add(line)}
 	case 3, 4:
 		key, title := "protocol", "PROXY PROTOCOLS"
 		if s.View == 4 {
@@ -204,9 +210,9 @@ func (s Screen) Paint() string {
 		lines = lines[:height-2]
 	}
 	add(ruler)
-	footer := " [1] Overview [2] In [3] Out [4] Protocols [5] Transports [6] IP Clients [7] IP+Inbound [8] NGINX [f] Filter [q] Quit"
+	footer := " [1] Overview [2] In [3] Out [4] Protocols [5] Transports [6] IP Clients [7] IP+Inbound [8] NGINX [9] History [f] Filter [q] Quit"
 	if inner < 100 {
-		footer = " [1]Home [2]In [3]Out [4]Proto [5]Trans [6]IP [7]Tags [8]HTTP [f] [q]Quit"
+		footer = " [1]Home [2]In [3]Out [4]Proto [5]Trans [6]IP [7]Tags [8]HTTP [9]Hist [q]Quit"
 	}
 	add(footer)
 	if s.Color {

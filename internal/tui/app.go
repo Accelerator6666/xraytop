@@ -79,10 +79,15 @@ func (a App) Run(ctx context.Context) error {
 	history := History{}
 	view := 0
 	clientFilter := a.ClientFilter
+	historyWindow:=15
+	historyIndex:=0
+	historyDetail:=false
+	historySort:="recent"
+	escapeState:=0
 	if clientFilter=="" {clientFilter="all"}
 	redraw := func() {
 		w, h := terminalSize()
-		fmt.Print(Screen{Snapshot: current, History: history, View: view, ClientFilter:clientFilter, Width: w, Height: h, Color: !a.NoColor}.Paint())
+		fmt.Print(Screen{Snapshot: current, History: history, View: view, ClientFilter:clientFilter, HistoryWindow:historyWindow,HistoryIndex:historyIndex,HistoryDetail:historyDetail,HistorySort:historySort, Width: w, Height: h, Color: !a.NoColor}.Paint())
 	}
 	redraw()
 	for {
@@ -107,6 +112,14 @@ func (a App) Run(ctx context.Context) error {
 			}
 			redraw()
 		case key := <-keys:
+			// Translate ANSI Up/Down arrows into j/k without affecting
+			// other views or waiting on a blocking terminal read.
+			if key==27 {escapeState=1;continue}
+			if escapeState==1 {escapeState=0;if key=='[' {escapeState=2;continue}}
+			if escapeState==2 {
+				escapeState=0
+				if key=='A' {key='k'} else if key=='B' {key='j'} else {continue}
+			}
 			switch key {
 			case 'q', 'Q', 3:
 				return nil
@@ -126,6 +139,22 @@ func (a App) Run(ctx context.Context) error {
 				view = 6
 			case '8':
 				view = 7
+			case '9':
+				view = 8
+			case 'j','J':
+				if view==8 && historyIndex<len(current.IPHistory)-1 {historyIndex++}
+			case 'k','K':
+				if view==8 && historyIndex>0 {historyIndex--}
+			case 10,13:
+				if view==8 && len(current.IPHistory)>0 {historyDetail=!historyDetail}
+			case 't','T':
+				if view==8 {
+					switch historyWindow {case 5:historyWindow=15;case 15:historyWindow=30;case 30:historyWindow=60;default:historyWindow=5}
+				}
+			case 's','S':
+				if view==8 {
+					switch historySort {case "recent":historySort="peak";case "peak":historySort="tcp";case "tcp":historySort="xray";default:historySort="recent"}
+				}
 			case 'f', 'F':
 				if view==5 {
 					switch clientFilter {
@@ -141,7 +170,7 @@ func (a App) Run(ctx context.Context) error {
 				default:
 				}
 			case 9:
-				view = (view + 1) % 8
+				view = (view + 1) % 9
 			}
 			redraw()
 		}

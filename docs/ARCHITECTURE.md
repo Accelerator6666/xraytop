@@ -81,3 +81,15 @@ The default local-only auto-discovery calls `nginx -T` (read-only) every ~60s, p
 ## Source-IP observation tiers (v0.9)
 
 `MergeObservedClientsWithHTTP` unifies recent Xray accepted journal events, current ingress TCP sockets, and matched NGINX combined-log HTTP records by normalized IP. Its evidence tiers are mutually exclusive and ordered XRAY > HTTP > TCP; HTTP-only requests do not create fake authenticated Xray inbound records. Interactive `f` and `--clients-filter` select tiers without changing the collectors. Per-IP TCP ports are shown as network-level observations, never asserted to be authenticated Xray user sessions.
+
+
+## 24-hour local IP history and TUI (v0.10)
+
+`internal/history` persists a bounded snapshot per minute with **TCP socket count**
+and the **last-5-minute rolling** Xray/NGINX event counts per source IP. The
+writer retains 24h/128 IPs/at most 16 MiB, atomically rewrites a 0600 JSON
+file inside a private state directory, rejects non-regular/symlink files,
+and uses only stdlib. The TUI view 9 offers sorted IP histories, first/last
+observed timestamps and 5/15/30/60-minute TCP/Xray/HTTP sampled trends with
+missing-minute gaps distinguished from observed zeros. No background service
+runs when XrayTop exits.
