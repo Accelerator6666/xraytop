@@ -4,13 +4,50 @@
 
 **XrayTop** is a Linux-only, read-only terminal monitor for a **local Xray-core process**, with btop-inspired terminal views and protocol-aware inbound/outbound statistics. It supports mixed VLESS, VMess, Trojan, etc. configurations over WebSocket, gRPC, XHTTP, RAW/TCP, HTTPUpgrade, mKCP and more, including Unix-domain socket listeners behind nginx.
 
-> **v0.11.1-dev preview:** multi-protocol config discovery, process CPU/RSS, tagged inbound/outbound traffic, protocol and transport traffic aggregation, and terminal charts are implemented. Native gRPC client, nginx access-log correlation and per-user sessions are not implemented yet.
+> **v0.11.2-dev preview:** multi-protocol config discovery, process CPU/RSS, tagged inbound/outbound traffic, protocol and transport traffic aggregation, and terminal charts are implemented. Native gRPC API access and authenticated per-user session tracking are not implemented; optional NGINX access-log correlation and IP-first evidence tiers are available, but are not proof of authenticated sessions.
 
 ## How monitoring works
 
 XrayTop reads **proxy protocol**, **transport method**, **security layer**, **listener** and **tag** from local Xray JSON/JSONC configuration. It supports both current `streamSettings.method` and legacy `streamSettings.network` and reads multiple `*.json` files from Xray `-confdir`. A tag maps onto the corresponding StatsService counter without guessing any transport from the tag text. Counters returned without matching configuration are labeled `Unknown`. Configured endpoints with no counter are shown as `-`, not as zero traffic.
 
 The StatsService API happens to use gRPC for **management**, independent of how clients connect to the Xray server: WebSocket, XHTTP, RAW, gRPC or any other transport can be monitored with this same API. Protocol and transport groupings are two *alternative* summaries of **inbound** counters. Do not add them or inbound and outbound totals together.
+
+
+## One-command install and upgrade (recommended)
+
+**Requirements:** Linux with systemd (Debian/Ubuntu etc.), AMD64/ARM64, root/sudo, curl, sha256sum, and running Xray/NGINX deployments. The installer **never modifies or restarts Xray or NGINX** and does not enable StatsService itself.
+
+Download the pinned-release installer, inspect it, and run:
+
+```bash
+curl -fL --retry 3 -o install-xraytop.sh \
+  https://github.com/Accelerator6666/xraytop/releases/download/v0.11.2-dev/install.sh
+less install-xraytop.sh
+sudo bash install-xraytop.sh
+```
+
+After auditing the script, an unattended one-liner is also possible (directly executing remote scripts is less secure):
+
+```bash
+curl -fsSL https://github.com/Accelerator6666/xraytop/releases/download/v0.11.2-dev/install.sh | sudo bash
+```
+
+The installer checks the platform and Xray/NGINX paths, downloads the executable, systemd unit and SHA256SUMS from the **same release**, verifies the binary/unit SHA256 and executable version, backs up the previous installation under `/var/lib/xraytop/backups/`, preserves/imports IP history, installs the hardened `xraytop-collector` systemd service with NGINX access-log group read permission, enables it, verifies a fresh snapshot, and attempts rollback on failure. Only the XrayTop collector is stopped/restarted.
+
+**Verify:**
+
+```bash
+xraytop --version
+systemctl is-active xraytop-collector
+systemctl status xraytop-collector --no-pager
+journalctl -u xraytop-collector -n 30 --no-pager
+xraytop --data-source daemon --once --once-view 9
+xraytop       # interactive: 6=source IP, 8=HTTP, 9=history
+```
+
+Re-run the script for subsequent upgrades (default pinned `v0.11.2-dev`). Customize via `sudo env XRAYTOP_VERSION=... XRAYTOP_CONFIG=/path/to/config.json bash install-xraytop.sh`. Run `bash install-xraytop.sh --help` for `XRAYTOP_XRAY_BIN`, `XRAYTOP_API`, `XRAYTOP_XRAY_UNIT`, `XRAYTOP_NGINX_CONFIG` and `XRAYTOP_ACCESS_LOG`. Custom file paths must be absolute with no spaces.
+
+Historical data is in `/var/lib/xraytop/ip-history.json`: **back it up before uninstalling**. Legacy `10-cert-access.conf` / `20-nginx-log.conf` security overrides are not silently removed; review them after successful installation. Stop collection with `sudo systemctl disable --now xraytop-collector`. Closing the interactive TUI does not stop the systemd collector.
 
 ## Build
 

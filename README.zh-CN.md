@@ -4,7 +4,7 @@
 
 **XrayTop** 是一个用于 **Linux 本机 Xray-core** 的只读终端监控程序，支持按**代理协议**和**传输方式**独立查看统计信息。适合同时运行 VLESS + gRPC、VLESS + WebSocket、VLESS + XHTTP、VMess、Trojan 等入站的服务器；可识别 NGINX 反代后连接 Xray 的 Unix Socket 监听路径。
 
-> **v0.11.1-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
+> **v0.11.2-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
 
 ## 工作原理
 
@@ -14,6 +14,72 @@
 - **实时流量**：通过本机 Xray 的 StatsService，按**精确的 Inbound/Outbound Tag** 匹配配置元数据。每 2 秒采样并计算速率。统计 API 使用 gRPC 只是管理接口协议，**不要求实际代理流量走 gRPC**。
 
 匹配不到的标签仍会展示为 `Unknown`，绝不根据名称（例如 `grpc-01`）臆测协议。配置存在但没有统计计数器时显示 `-`，不当作 0 B。聚合总流量只计算入站统计，避免入站与出站重复计算。协议汇总和传输汇总是同一流量的两种分类，不能彼此相加。
+
+
+## 一键安装与升级（推荐）
+
+**适用：** Linux + systemd（Debian/Ubuntu 等）、AMD64/ARM64，机器上已经运行 Xray 和 NGINX。需要 root/sudo、curl 和 sha256sum。安装器**不修改、不重启 Xray 或 NGINX**，也不会自动启用 Xray StatsService。
+
+推荐从固定版本 Release 下载脚本，查看内容后安装：
+
+```bash
+curl -fL --retry 3 -o install-xraytop.sh \
+  https://github.com/Accelerator6666/xraytop/releases/download/v0.11.2-dev/install.sh
+less install-xraytop.sh
+sudo bash install-xraytop.sh
+```
+
+如果已审核并信任脚本，也可使用真正的单行命令（直接执行网络脚本不如上述做法安全）：
+
+```bash
+curl -fsSL https://github.com/Accelerator6666/xraytop/releases/download/v0.11.2-dev/install.sh | sudo bash
+```
+
+脚本会完成整个流程：
+
+1. 检查系统架构、Xray 二进制与配置路径；从**同一个版本**下载二进制、systemd 单元和 `SHA256SUMS`，验证两份文件 SHA256 及程序版本，校验失败时不覆盖旧版本。
+2. 备份旧程序、service 文件至 `/var/lib/xraytop/backups/`；如服务已经运行，只暂停/重启 `xraytop-collector`，**不触碰代理进程**。
+3. 创建权限 `0700` 的 `/var/lib/xraytop`；不覆盖现有 `ip-history.json`，仅在没有历史时导入旧的 `/root/.local/state/xraytop/ip-history.json`。
+4. 安装 `/usr/local/bin/xraytop`、配置后台服务及私有目录；根据 NGINX access.log 所属组设置只读组权限（通常 `adm`），保持 `ProtectHome=true`、`ProtectSystem=strict` 和空的 capabilities。
+5. 运行 `systemctl enable` 启用开机启动、启动采集并检查新鲜快照；失败时尝试回滚程序与 service 文件。
+
+**安装、升级后的验收：**
+
+```bash
+xraytop --version
+systemctl is-enabled xraytop-collector
+systemctl status xraytop-collector --no-pager
+journalctl -u xraytop-collector -n 30 --no-pager
+xraytop --data-source daemon --once --once-view 9
+
+jq '{
+  nginx_ports: ((.snapshot.Nginx.Ports // []) | length),
+  nginx_routes: ((.snapshot.Nginx.Routes // []) | length),
+  nginx_error: .snapshot.NginxError,
+  tcp_connections: .snapshot.Live.Connections,
+  tcp_error: .snapshot.LiveError,
+  nginx_http_matches: .snapshot.Access.Matched,
+  access_error: .snapshot.AccessError,
+  xray_accepted: .snapshot.Recent.Events
+}' /var/lib/xraytop/snapshot.json
+```
+
+你这台 VPS 已验证 NGINX 为 **15 个入口端口、30 条代理路由**；其他机器可能不同。HTTP 请求数为 0 时请先检查 `access_error`。TCP 连接数及 Xray accepted 事件数都不是在线用户数。
+
+**升级及自定义配置：** 以后再次执行同一脚本即可升级固定版本；选择其他已发布标签时设置 `XRAYTOP_VERSION`。对于不同 Xray 安装路径：
+
+```bash
+sudo env XRAYTOP_VERSION=v0.11.2-dev \
+  XRAYTOP_CONFIG=/usr/local/etc/xray/config.json \
+  XRAYTOP_XRAY_BIN=/usr/local/bin/xray \
+  bash install-xraytop.sh
+```
+
+还支持 `XRAYTOP_API`、`XRAYTOP_XRAY_UNIT`、`XRAYTOP_NGINX_CONFIG`、`XRAYTOP_ACCESS_LOG`，使用 `bash install-xraytop.sh --help` 查看。自定义路径必须是无空格的绝对路径。
+
+**旧版权限清理：** 若此前使用过 `10-cert-access.conf` / `20-nginx-log.conf` 解决 `nginx -T` 沙箱问题，安装器会提醒但不会擅自删除管理员覆盖文件；待新版本采集正常后再手动清理，保留日志组读取权限。要停止采集，运行 `systemctl disable --now xraytop-collector`；卸载前请先备份 `/var/lib/xraytop/ip-history.json`。
+
+启动交互界面只需输入 `xraytop`，按 `6` 看来源 IP、`8` 看 HTTP、`9` 看历史；按 `q` 退出 TUI 后 systemd **仍继续采集**。
 
 ## 编译和运行
 

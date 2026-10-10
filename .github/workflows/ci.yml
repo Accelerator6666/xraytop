@@ -15,6 +15,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Check installer syntax and help
+        run: |
+          bash -n scripts/install.sh
+          bash scripts/install.sh --help | grep -q XRAYTOP_VERSION
       - run: go test ./...
       - run: go vet ./...
       - name: Cross compile
