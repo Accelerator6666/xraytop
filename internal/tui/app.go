@@ -113,13 +113,17 @@ func (a App) Run(ctx context.Context) error {
 				view = 1
 			case '3':
 				view = 2
+			case '4':
+				view = 3
+			case '5':
+				view = 4
 			case 'r', 'R':
 				select {
 				case requests <- struct{}{}:
 				default:
 				}
 			case 9:
-				view = (view + 1) % 3
+				view = (view + 1) % 5
 			}
 			redraw()
 		}

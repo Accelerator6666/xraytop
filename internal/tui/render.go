@@ -34,8 +34,6 @@ type Screen struct {
 const (
 	colorOff = "\x1b[0m"
 	cyan     = "\x1b[36m"
-	green    = "\x1b[32m"
-	red      = "\x1b[31m"
 	yellow   = "\x1b[33m"
 	bold     = "\x1b[1m"
 )
@@ -56,7 +54,7 @@ func (s Screen) Paint() string {
 	var lines []string
 	add := func(line string) { lines = append(lines, truncate(line, inner)) }
 	ruler := strings.Repeat("─", inner)
-	add(s.style(" XrayTop", bold+cyan) + "   local Xray monitor  |  " + s.Snapshot.At.Format("15:04:05"))
+	add(s.style(" XrayTop", bold+cyan) + "   local multi-protocol monitor  |  " + s.Snapshot.At.Format("15:04:05"))
 	add(ruler)
 	status := "RUNNING"
 	if s.Snapshot.PID == 0 {
@@ -70,13 +68,17 @@ func (s Screen) Paint() string {
 			apiState = "UNAVAILABLE"
 		}
 	}
-	add(" StatsService: " + apiState)
+	add(fmt.Sprintf(" StatsService: %s  |  config: %d inbounds / %d outbounds", apiState, len(s.Snapshot.Catalog.Inbounds), len(s.Snapshot.Catalog.Outbounds)))
 	if s.Snapshot.APIError != "" {
-		add(s.style(" Warning: "+s.Snapshot.APIError, yellow))
+		add(s.style(" API warning: "+s.Snapshot.APIError, yellow))
+	}
+	if s.Snapshot.ConfigError != "" {
+		add(s.style(" Config warning: "+s.Snapshot.ConfigError, yellow))
 	}
 	add(ruler)
-	if s.View == 0 {
-		add(s.style(" TRAFFIC  (inbound counters; total not duplicated with outbound)", bold))
+	switch s.View {
+	case 0:
+		add(s.style(" TRAFFIC  (inbound counters; not duplicated with outbound)", bold))
 		if !s.Snapshot.Traffic.HasRates {
 			add(" Up: --/s     Down: --/s     (waiting for second API sample)")
 		} else {
@@ -84,26 +86,29 @@ func (s Screen) Paint() string {
 		}
 		add(" Up   " + spark(s.History.Up, max(4, inner-10)))
 		add(" Down " + spark(s.History.Down, max(4, inner-10)))
-		add(fmt.Sprintf(" Inbound cumulative: up %s  |  down %s", xray.FormatBytes(s.Snapshot.Traffic.UpTotal), xray.FormatBytes(s.Snapshot.Traffic.DownTotal)))
+		add(fmt.Sprintf(" Inbound total: up %s | down %s", xray.FormatBytes(s.Snapshot.Traffic.UpTotal), xray.FormatBytes(s.Snapshot.Traffic.DownTotal)))
 		add(ruler)
-		add(s.style(" TOP INBOUNDS  (cumulative inbound traffic)", bold))
-		add(" TAG" + spaces(max(1, inner-41)) + "UPLINK       DOWNLINK")
-		maxRows := max(1, height-len(lines)-5)
-		if maxRows > 10 {
-			maxRows = 10
-		}
-		addTrafficRows(&lines, s.Snapshot.Traffic.Inbound, maxRows, inner)
-	} else {
-		label := "INBOUNDS"
-		rows := s.Snapshot.Traffic.Inbound
+		add(s.style(" TOP INBOUNDS  (proxy / transport / security)", bold))
+		add(endpointHeader(inner))
+		addEndpointRows(&lines, s.Snapshot.Inbounds, max(1, min(10, height-len(lines)-4)), inner, false)
+	case 1, 2:
+		rows, title := s.Snapshot.Inbounds, "INBOUNDS"
 		if s.View == 2 {
-			label = "OUTBOUNDS"
-			rows = s.Snapshot.Traffic.Outbound
+			rows = s.Snapshot.Outbounds
+			title = "OUTBOUNDS"
 		}
-		add(s.style(" "+label+"  (cumulative bytes, read-only)", bold))
-		add(" TAG" + spaces(max(1, inner-41)) + "UPLINK       DOWNLINK")
-		maxRows := max(1, height-len(lines)-5)
-		addTrafficRows(&lines, rows, maxRows, inner)
+		add(s.style(" "+title+"  (all configured tags, plus stats-only tags)", bold))
+		add(endpointHeader(inner))
+		addEndpointRows(&lines, rows, max(1, height-len(lines)-4), inner, s.View == 1)
+	case 3, 4:
+		key, title := "protocol", "PROXY PROTOCOLS"
+		if s.View == 4 {
+			key, title = "TRANSPORTS", "TRANSPORT METHODS"
+		}
+		add(s.style(" "+title+"  (inbound-only; no outbound double count)", bold))
+		add(groupHeader(inner))
+		groups := xray.AggregateBy(s.Snapshot.Inbounds, key)
+		addGroupRows(&lines, groups, max(1, height-len(lines)-4), inner, s.Snapshot.Traffic.HasRates)
 	}
 	for len(lines) < height-2 {
 		add("")
@@ -112,25 +117,81 @@ func (s Screen) Paint() string {
 		lines = lines[:height-2]
 	}
 	add(ruler)
-	add(" [1] Overview  [2] Inbounds  [3] Outbounds  [r] Refresh  [q] Quit")
+	add(" [1] Overview [2] In [3] Out [4] Protocols [5] Transports [q] Quit")
 	if s.Color {
 		return "\x1b[H" + strings.Join(lines, "\x1b[K\r\n") + "\x1b[J"
 	}
 	return strings.Join(lines, "\n")
 }
 
-func addTrafficRows(lines *[]string, rows []xray.Traffic, limit, width int) {
+func endpointHeader(width int) string {
+	if width < 87 {
+		return " TAG / PROTOCOL / TRANSPORT / SEC                 UP           DOWN"
+	}
+	return fmt.Sprintf(" %-*s %-12s %-14s %-9s %10s %10s", max(12, width-66), "TAG", "PROTOCOL", "TRANSPORT", "SECURITY", "UP", "DOWN")
+}
+func addEndpointRows(lines *[]string, rows []xray.MonitoredEndpoint, limit, width int, showListen bool) {
 	if len(rows) == 0 {
-		*lines = append(*lines, " No traffic counters. Enable stats + inbound/outbound policy in Xray.")
+		*lines = append(*lines, " No inbounds/outbounds found. Use --config or --config-dir for metadata.")
 		return
 	}
-	tagWidth := max(12, width-29)
 	for i, row := range rows {
 		if i >= limit {
 			break
 		}
-		name := truncate(" "+row.Name, tagWidth)
-		*lines = append(*lines, fmt.Sprintf("%-*s %-12s %-12s", tagWidth, name, xray.FormatBytes(row.Uplink), xray.FormatBytes(row.Downlink)))
+		up, down := "-", "-"
+		if row.HasCounters {
+			up, down = xray.FormatBytes(row.Uplink), xray.FormatBytes(row.Downlink)
+		}
+		tag := row.Tag
+		if tag == "" {
+			tag = "(untagged)"
+		}
+		if width < 87 {
+			// Compact terminals: show metadata on one line, counters on another.
+			*lines = append(*lines, truncate(" "+tag+"  "+row.Protocol+" / "+row.Transport+" / "+row.Security, width))
+			*lines = append(*lines, truncate("   "+row.Listen+"  up "+up+" / down "+down, width))
+			continue
+		}
+		nameWidth := max(12, width-66)
+		name := truncate(tag, nameWidth)
+		line := fmt.Sprintf(" %-*s %-12s %-14s %-9s %10s %10s", nameWidth, name, truncate(row.Protocol, 12), truncate(row.Transport, 14), truncate(row.Security, 9), up, down)
+		*lines = append(*lines, truncate(line, width))
+		// Only metadata is read from Xray config. No UUIDs, passwords or keys.
+		if showListen && row.Listen != "" && row.Listen != "-" {
+			*lines = append(*lines, truncate("   listen: "+row.Listen, width))
+		}
+	}
+}
+func groupHeader(width int) string {
+	if width < 84 {
+		return fmt.Sprintf(" %-*s %5s %5s %11s %11s", max(9, width-40), "GROUP", "TAGS", "STATS", "UP/s", "DOWN/s")
+	}
+	return fmt.Sprintf(" %-*s %5s %5s %11s %11s %11s %11s", max(9, width-64), "GROUP", "TAGS", "STATS", "UP/s", "DOWN/s", "UP TOTAL", "DOWN TOTAL")
+}
+func addGroupRows(lines *[]string, groups []xray.Aggregate, limit, width int, hasRates bool) {
+	if len(groups) == 0 {
+		*lines = append(*lines, " No protocol/transport information. Supply --config or --config-dir.")
+		return
+	}
+	for i, group := range groups {
+		if i >= limit {
+			break
+		}
+		upTotal, downTotal, upRate, downRate := "-", "-", "--/s", "--/s"
+		if group.WithCounters > 0 {
+			upTotal, downTotal = xray.FormatBytes(group.Uplink), xray.FormatBytes(group.Downlink)
+			if hasRates {
+				upRate, downRate = xray.FormatRate(group.UpRate), xray.FormatRate(group.DownRate)
+			}
+		}
+		if width < 84 {
+			nameWidth := max(9, width-40)
+			*lines = append(*lines, truncate(fmt.Sprintf(" %-*s %5d %5d %11s %11s", nameWidth, truncate(group.Name, nameWidth), group.Endpoints, group.WithCounters, upRate, downRate), width))
+			continue
+		}
+		nameWidth := max(9, width-64)
+		*lines = append(*lines, truncate(fmt.Sprintf(" %-*s %5d %5d %11s %11s %11s %11s", nameWidth, truncate(group.Name, nameWidth), group.Endpoints, group.WithCounters, upRate, downRate, upTotal, downTotal), width))
 	}
 }
 func truncate(s string, maxRunes int) string {
@@ -145,9 +206,14 @@ func truncate(s string, maxRunes int) string {
 	}
 	return string([]rune(s)[:maxRunes-1]) + "…"
 }
-func spaces(n int) string { return strings.Repeat(" ", n) }
 func max(a, b int) int {
 	if a > b {
+		return a
+	}
+	return b
+}
+func min(a, b int) int {
+	if a < b {
 		return a
 	}
 	return b

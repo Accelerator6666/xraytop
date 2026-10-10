@@ -17,10 +17,16 @@ type Snapshot struct {
 	APIError     string
 	APIEnabled   bool
 	Traffic      xray.Breakdown
+	Catalog      xray.Catalog
+	ConfigError  string
+	Inbounds     []xray.MonitoredEndpoint
+	Outbounds    []xray.MonitoredEndpoint
 }
 
 type Collector struct {
 	ProcRoot    string
+	ConfigFiles []string
+	ConfigDir   string
 	Client      xray.Client
 	sampler     xray.Sampler
 	previous    system.CPUSample
@@ -51,15 +57,44 @@ func (c *Collector) Sample(ctx context.Context) Snapshot {
 	} else {
 		c.previous = system.CPUSample{}
 	}
+	// Only use explicitly supplied local config paths, or discover the paths
+	// from the running Xray process. Never infer a proxy protocol from a tag.
+	paths := append([]string(nil), c.ConfigFiles...)
+	dir := c.ConfigDir
+	if len(paths) == 0 && dir == "" && snap.PID != 0 {
+		var e error
+		paths, dir, e = xray.DiscoverConfigPaths(root, snap.PID)
+		if e != nil {
+			snap.ConfigError = "discover config: " + e.Error()
+		}
+	}
+	if len(paths) > 0 || dir != "" {
+		var e error
+		snap.Catalog, e = xray.LoadCatalog(paths, dir)
+		if e != nil {
+			snap.ConfigError = e.Error()
+		}
+	}
 	snap.Traffic = c.lastTraffic
 	if snap.APIEnabled {
 		stats, e := c.Client.Query(ctx)
 		if e != nil {
 			snap.APIError = e.Error()
+			// Keep last cumulative counters for context but invalidate live rates.
+			snap.Traffic.HasRates = false
+			snap.Traffic.UpRate, snap.Traffic.DownRate = 0, 0
+			for i := range snap.Traffic.Inbound {
+				snap.Traffic.Inbound[i].UpRate, snap.Traffic.Inbound[i].DownRate = 0, 0
+			}
+			for i := range snap.Traffic.Outbound {
+				snap.Traffic.Outbound[i].UpRate, snap.Traffic.Outbound[i].DownRate = 0, 0
+			}
 		} else {
 			snap.Traffic = c.sampler.Update(time.Now(), stats)
 			c.lastTraffic = snap.Traffic
 		}
 	}
+	snap.Inbounds = xray.JoinEndpoints(snap.Catalog.Inbounds, snap.Traffic.Inbound)
+	snap.Outbounds = xray.JoinEndpoints(snap.Catalog.Outbounds, snap.Traffic.Outbound)
 	return snap
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/Accelerator6666/xraytop/internal/collector"
@@ -13,10 +14,19 @@ import (
 	"github.com/Accelerator6666/xraytop/internal/xray"
 )
 
-var version = "v0.1.0-dev"
+var version = "v0.2.0-dev"
+
+// configPaths supports repeated --config arguments for multi-file setups.
+type configPaths []string
+
+func (p *configPaths) String() string     { return strings.Join(*p, ", ") }
+func (p *configPaths) Set(s string) error { *p = append(*p, s); return nil }
 
 func main() {
 	versionFlag := flag.Bool("version", false, "show version")
+	var configs configPaths
+	flag.Var(&configs, "config", "local Xray JSON/JSONC config file (repeatable; autodetected from process when omitted)")
+	configDir := flag.String("config-dir", "", "Xray -confdir path (optional; autodetected when omitted)")
 	api := flag.String("api", "127.0.0.1:10085", "local Xray StatsService address (empty disables API)")
 	binary := flag.String("xray-bin", "xray", "path to xray executable used for statsquery")
 	interval := flag.Duration("interval", 2*time.Second, "monitor polling interval (minimum 1s)")
@@ -35,7 +45,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "--interval must be at least 1s")
 		os.Exit(2)
 	}
-	c := &collector.Collector{Client: xray.Client{Binary: *binary, Server: *api}}
+	c := &collector.Collector{Client: xray.Client{Binary: *binary, Server: *api}, ConfigFiles: configs, ConfigDir: *configDir}
 	if *once {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
