@@ -1,0 +1,6 @@
+/xraytop
+/xraytop-linux-*
+*.log
+.DS_Store
+.idea/
+.vscode/
