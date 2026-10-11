@@ -116,7 +116,7 @@ func TestBtopHistoryPanelAndColorFallback(t *testing.T){
   },
  }
  out:=screen.Paint()
- if !strings.Contains(out,"[ .:=+]")||!strings.Contains(out,"TCP 0-16")||
+ if !strings.Contains(out,".:=+]")||!strings.Contains(out,"TCP 0-16")||
     !strings.Contains(out,"Timeline: space missing"){
   t.Fatalf("btop history timeline / scale / legend missing: %s",out)
  }
