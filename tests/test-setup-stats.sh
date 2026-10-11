@@ -40,6 +40,16 @@ case "$1" in
   *) exit 1 ;;
 esac
 MOCK
+# GitHub-hosted runners are non-root; simulate only the UID check.
+# Production setup-stats.sh still enforces root privileges.
+cat > "$TMP/bin/id" <<'MOCK'
+#!/usr/bin/env bash
+if [[ "${1:-}" == -u ]]; then
+  printf '0\n'
+else
+  /usr/bin/id "$@"
+fi
+MOCK
 chmod +x "$TMP/bin/"*
 export PATH="$TMP/bin:$PATH"
 export TEST_CONFIG="$TMP/config.json"
