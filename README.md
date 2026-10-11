@@ -13,49 +13,113 @@ XrayTop reads **proxy protocol**, **transport method**, **security layer**, **li
 The StatsService API happens to use gRPC for **management**, independent of how clients connect to the Xray server: WebSocket, XHTTP, RAW, gRPC or any other transport can be monitored with this same API. Protocol and transport groupings are two *alternative* summaries of **inbound** counters. Do not add them or inbound and outbound totals together.
 
 
-## One-command install and upgrade (recommended)
+## Installation, upgrades, and StatsService setup (v0.11.3-dev)
 
-**Requirements:** Linux with systemd (Debian/Ubuntu etc.), AMD64/ARM64, root/sudo, curl, sha256sum, and running Xray/NGINX deployments. By default the installer **does not modify or restart Xray or NGINX**. Opt-in StatsService setup is available with `XRAYTOP_SETUP_STATS=1` and may briefly restart Xray.
+### 1. Prerequisites
 
-Download the pinned-release installer, inspect it, and run:
+Use a Linux host with systemd (e.g. Debian/Ubuntu), AMD64 or ARM64, with Xray and NGINX already installed and running. You need root/sudo, `curl`, and `sha256sum`. The defaults are `/usr/local/etc/xray/config.json`, `/usr/local/bin/xray`, and `/etc/nginx/nginx.conf`; override paths with environment variables if necessary.
+
+**Default installation does not modify or restart Xray or NGINX.** The installer tests whether StatsService responds, but a missing API generates only a warning. Setting `XRAYTOP_SETUP_STATS=1` explicitly authorizes Xray config changes and a restart, which may interrupt existing proxy connections. Use a separate, reliable SSH management connection.
+
+### 2. First-time installation (recommended)
+
+Download the pinned [v0.11.3-dev release](https://github.com/Accelerator6666/xraytop/releases/tag/v0.11.3-dev), review the script, and run:
 
 ```bash
 curl -fL --retry 3 -o install-xraytop.sh \
   https://github.com/Accelerator6666/xraytop/releases/download/v0.11.3-dev/install.sh
+
 less install-xraytop.sh
 sudo bash install-xraytop.sh
 ```
 
-After auditing the script, an unattended one-liner is also possible (directly executing remote scripts is less secure):
+After reviewing and trusting the script, an unattended one-liner is possible (less secure than reviewing a downloaded script first):
 
 ```bash
 curl -fsSL https://github.com/Accelerator6666/xraytop/releases/download/v0.11.3-dev/install.sh | sudo bash
 ```
 
-The installer checks the platform and Xray/NGINX paths, downloads the executable, systemd unit and SHA256SUMS from the **same release**, verifies the binary/unit SHA256 and executable version, backs up the previous installation under `/var/lib/xraytop/backups/`, preserves/imports IP history, installs the hardened `xraytop-collector` systemd service with NGINX access-log group read permission, enables it, verifies a fresh snapshot, and attempts rollback on failure. Only the XrayTop collector is stopped/restarted.
+The installer selects AMD64/ARM64, fetches XrayTop, the systemd unit and SHA256SUMS from the **same release**, verifies binary/unit SHA256 and binary version, installs `/usr/local/bin/xraytop` and `xraytop-collector.service`, and checks for a fresh background snapshot. Existing binaries and unit files are backed up under `/var/lib/xraytop/backups/`; `/var/lib/xraytop/ip-history.json` is preserved. Normal install/upgrade only restarts the Collector.
 
-**Optional StatsService configuration:** The installer checks whether the API responds. It warns without changing Xray in default mode. To authorize modification, backup and restart of the Xray service, download and review the installer then run:
+### 3. Optional automatic repair of a missing StatsService
+
+If the UI says `StatsService: UNAVAILABLE` or the installer prints `[WARN] Xray StatsService unavailable`, test the API:
+
+```bash
+sudo /usr/local/bin/xray api statsquery -s 127.0.0.1:10085
+```
+
+To **explicitly authorize** repair, use the reviewed `install-xraytop.sh` downloaded above:
 
 ```bash
 sudo env XRAYTOP_SETUP_STATS=1 bash install-xraytop.sh
 ```
 
-This operation requires `jq`, a single active JSON Xray configuration, and `127.0.0.1:PORT` StatsService. It refuses existing API definitions and ambiguous configurations. The release-pinned helper is SHA256-verified. A `.json` temporary configuration is validated with `xray run -test -format json` before Xray is restarted; failures trigger rollback attempts. A restart may interrupt proxy clients. Test recovery and keep a separate SSH management connection.
+This mode requires `jq` (on Debian/Ubuntu: `sudo apt-get update && sudo apt-get install -y jq`). Automatic setup only supports **one plain JSON file actually referenced by the running Xray systemd process**, a loopback API at `127.0.0.1:PORT`, and an unambiguous inbound configuration. Existing APIs or conflicting tags are never overwritten. The release-pinned repair helper is SHA256-verified. It backs up the Xray JSON configuration, preserves existing proxy inbounds/outbounds/routes and NGINX/Unix sockets, enables StatsService plus inbound/outbound counters, and assigns `xraytop-inbound-N` to previously untagged inbounds. The `.json` temporary file is validated with `xray run -test -format json` before restarting Xray. It attempts rollback if the API does not become available; **rollback is not a guarantee of service recovery**.
 
-**Verify:**
+Hosts where StatsService is already reachable need **no repair**. Normal installation does not change Xray, and even opt-in mode skips Xray changes when its API probe succeeds. For `-confdir`, JSONC, multiple instances, existing API setups, or nonstandard launch arguments, configure StatsService manually instead.
+
+### 4. Verify after installation or upgrade
 
 ```bash
 xraytop --version
-systemctl is-active xraytop-collector
-systemctl status xraytop-collector --no-pager
-journalctl -u xraytop-collector -n 30 --no-pager
-xraytop --data-source daemon --once --once-view 9
-xraytop       # interactive: 6=source IP, 8=HTTP, 9=history
+sudo systemctl is-enabled xraytop-collector
+sudo systemctl is-active xray xraytop-collector
+sudo systemctl status xraytop-collector --no-pager
+sudo journalctl -u xraytop-collector -n 30 --no-pager
+
+# Verify the local Xray API (when enabled)
+sudo /usr/local/bin/xray api statsquery -s 127.0.0.1:10085
+
+# Read the collector history and open the TUI
+sudo xraytop --data-source daemon --once --once-view 9
+sudo xraytop
 ```
 
-Re-run the script for subsequent upgrades (default pinned `v0.11.3-dev`). Customize via `sudo env XRAYTOP_VERSION=... XRAYTOP_CONFIG=/path/to/config.json bash install-xraytop.sh`. Run `bash install-xraytop.sh --help` for `XRAYTOP_XRAY_BIN`, `XRAYTOP_API`, `XRAYTOP_XRAY_UNIT`, `XRAYTOP_NGINX_CONFIG` and `XRAYTOP_ACCESS_LOG`. Custom file paths must be absolute with no spaces.
+TUI keys: `1` overview; `6` source IPs; `8` NGINX; `9` history. `StatsService: ONLINE` plus accumulated inbound bytes demonstrates that API counters are readable. `0 B/s` is normal without new proxy traffic or before two samples. HTTP matches, TCP connections, and accepted journal events are **not authenticated online-user counts**.
 
-Historical data is in `/var/lib/xraytop/ip-history.json`: **back it up before uninstalling**. Legacy `10-cert-access.conf` / `20-nginx-log.conf` security overrides are not silently removed; review them after successful installation. Stop collection with `sudo systemctl disable --now xraytop-collector`. Closing the interactive TUI does not stop the systemd collector.
+Check detailed collector fields with:
+
+```bash
+sudo jq '{
+  nginx_ports: ((.snapshot.Nginx.Ports // []) | length),
+  nginx_routes: ((.snapshot.Nginx.Routes // []) | length),
+  nginx_error: .snapshot.NginxError,
+  tcp_connections: (.snapshot.Live.Connections // 0),
+  tcp_error: .snapshot.LiveError,
+  nginx_http_matches: (.snapshot.Access.Matched // 0),
+  access_error: .snapshot.AccessError,
+  xray_accepted: (.snapshot.Recent.Events // 0)
+}' /var/lib/xraytop/snapshot.json
+```
+
+### 5. Upgrades, custom deployments, and troubleshooting
+
+To upgrade from `v0.11.2-dev` or another older version, download the current release installer again and run it normally; uninstalling first or reconfiguring an existing StatsService is unnecessary. Custom installations can set:
+
+```bash
+sudo env XRAYTOP_VERSION=v0.11.3-dev \
+  XRAYTOP_CONFIG=/usr/local/etc/xray/config.json \
+  XRAYTOP_XRAY_BIN=/usr/local/bin/xray \
+  XRAYTOP_API=127.0.0.1:10085 \
+  XRAYTOP_XRAY_UNIT=xray.service \
+  bash install-xraytop.sh
+```
+
+`XRAYTOP_NGINX_CONFIG` and `XRAYTOP_ACCESS_LOG` are also supported. Run `bash install-xraytop.sh --help` for all variables; custom paths must be absolute and contain no spaces.
+
+- **StatsService unavailable:** confirm the API is enabled in Xray, the address matches `XRAYTOP_API`, and `xray api statsquery` succeeds. The default installer will not repair it.
+- **Automatic repair refused:** check for an existing API, `-confdir` or JSONC, different Xray process arguments, or a tag collision. Do not override production configs blindly.
+- **Collector failure:** inspect `sudo journalctl -u xraytop-collector -n 100 --no-pager`, snapshot freshness, and NGINX access-log permissions.
+- **Recovery:** backed-up Xray configs are under `/var/lib/xraytop/backups/<installation>/xray-config-*.json`. Identify and validate the correct backup before any manual restoration/restart.
+
+Back up `/var/lib/xraytop/ip-history.json` before uninstalling. Closing the TUI leaves the Collector running. To stop it:
+
+```bash
+sudo systemctl disable --now xraytop-collector
+```
+
+Legacy `10-cert-access.conf` / `20-nginx-log.conf` security overrides are not automatically removed; inspect them after verifying collector operation.
 
 ## Build
 

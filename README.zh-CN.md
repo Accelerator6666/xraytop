@@ -16,78 +16,122 @@
 匹配不到的标签仍会展示为 `Unknown`，绝不根据名称（例如 `grpc-01`）臆测协议。配置存在但没有统计计数器时显示 `-`，不当作 0 B。聚合总流量只计算入站统计，避免入站与出站重复计算。协议汇总和传输汇总是同一流量的两种分类，不能彼此相加。
 
 
-## 一键安装与升级（推荐）
+## 安装、升级与 StatsService 配置（v0.11.3-dev）
 
-**适用：** Linux + systemd（Debian/Ubuntu 等）、AMD64/ARM64，机器上已经运行 Xray 和 NGINX。需要 root/sudo、curl 和 sha256sum。安装器默认**不修改、不重启 Xray 或 NGINX**；仅在明确设置 `XRAYTOP_SETUP_STATS=1` 时，才尝试备份配置、启用 StatsService 并重启 Xray。
+### 1. 安装前准备
 
-推荐从固定版本 Release 下载脚本，查看内容后安装：
+支持 Debian/Ubuntu 等使用 systemd 的 Linux（x86_64 / ARM64）。目标机器需已安装并运行 Xray 和 NGINX，准备好 root/sudo、`curl`、`sha256sum` 等工具。默认安装器读取 `/usr/local/etc/xray/config.json`、`/usr/local/bin/xray` 和 `/etc/nginx/nginx.conf`；其他路径可以通过环境变量指定。
+
+**默认安装是非侵入式的：不修改或重启 Xray/NGINX。** 安装器会检测 StatsService，但如果 API 缺失，只显示警告，不会擅自修复。需要自动启用 StatsService 时，必须显式设置 `XRAYTOP_SETUP_STATS=1`；此模式可能重启 Xray、短暂中断现有代理连接，请使用独立 SSH 管理连接执行。
+
+### 2. 首次安装（推荐）
+
+从固定版本 [v0.11.3-dev Release](https://github.com/Accelerator6666/xraytop/releases/tag/v0.11.3-dev) 下载安装脚本，先阅读再运行：
 
 ```bash
 curl -fL --retry 3 -o install-xraytop.sh \
   https://github.com/Accelerator6666/xraytop/releases/download/v0.11.3-dev/install.sh
+
 less install-xraytop.sh
 sudo bash install-xraytop.sh
 ```
 
-如果已审核并信任脚本，也可使用真正的单行命令（直接执行网络脚本不如上述做法安全）：
+已经审核并信任安装脚本时，也可一行安装（直接执行远程脚本的安全性低于先下载审核）：
 
 ```bash
 curl -fsSL https://github.com/Accelerator6666/xraytop/releases/download/v0.11.3-dev/install.sh | sudo bash
 ```
 
-脚本会完成整个流程：
+安装器会自动识别 AMD64/ARM64，从同一 Release 下载 XrayTop、systemd 服务文件和 SHA256SUMS，验证二进制及服务文件校验和与版本，部署 `/usr/local/bin/xraytop` 和 `xraytop-collector.service`，并检查后台快照是否刷新。原程序与服务文件备份在 `/var/lib/xraytop/backups/`；现有 `/var/lib/xraytop/ip-history.json` 不会被覆盖。日常安装/升级只重启 Collector。
 
-1. 检查系统架构、Xray 二进制与配置路径；从**同一个版本**下载二进制、systemd 单元和 `SHA256SUMS`，验证两份文件 SHA256 及程序版本，校验失败时不覆盖旧版本。
-2. 备份旧程序、service 文件至 `/var/lib/xraytop/backups/`；如服务已经运行，只暂停/重启 `xraytop-collector`，**不触碰代理进程**。
-3. 创建权限 `0700` 的 `/var/lib/xraytop`；不覆盖现有 `ip-history.json`，仅在没有历史时导入旧的 `/root/.local/state/xraytop/ip-history.json`。
-4. 安装 `/usr/local/bin/xraytop`、配置后台服务及私有目录；根据 NGINX access.log 所属组设置只读组权限（通常 `adm`），保持 `ProtectHome=true`、`ProtectSystem=strict` 和空的 capabilities。
-5. 运行 `systemctl enable` 启用开机启动、启动采集并检查新鲜快照；失败时尝试回滚程序与 service 文件。
+### 3. StatsService 缺失时的自动修复（可选）
 
-**可选的 StatsService 自动修复：** 安装后会自动检查 API。默认只提示，不修改 Xray。如果明确授权修复，请先下载并检查安装脚本，然后执行：
+如果首页显示 `StatsService: UNAVAILABLE` 或安装报告出现 `[WARN] Xray StatsService unavailable`，先检查当前 API：
+
+```bash
+sudo /usr/local/bin/xray api statsquery -s 127.0.0.1:10085
+```
+
+若确实没有启用 StatsService，可以**主动授权**安装器修复（请复用上一步下载并审核的 `install-xraytop.sh`）：
 
 ```bash
 sudo env XRAYTOP_SETUP_STATS=1 bash install-xraytop.sh
 ```
 
-此模式需要 `jq`，只支持单一 JSON 配置和 `127.0.0.1:PORT` 本地 API。已有 API、配置不明确或标签冲突时会拒绝修改。修复助手与安装版本一致且会进行 SHA256 校验，先备份原配置，再以 `.json` 临时文件及 `-format json` 验证；重启 Xray 后检查 API，失败时尝试回滚。操作可能中断现有代理连接，建议通过独立 SSH 连接执行。
+需要 `jq` 时可先在 Debian/Ubuntu 安装：
 
-**安装、升级后的验收：**
+```bash
+sudo apt-get update
+sudo apt-get install -y jq
+```
+
+修复程序采用以下保护措施：只接受当前 Xray systemd 进程确实使用的**单文件标准 JSON 配置**，API 地址只允许 `127.0.0.1:PORT`；已有 API、重复/冲突的入站标签、配置路径不明时拒绝自动修改。修复时备份原始 `config.json`，保留现有 VLESS、WebSocket、NGINX/Unix Socket、出站和路由，新增 `StatsService`、系统上下行计数并为缺少 tag 的入站生成 `xraytop-inbound-N` 标签。使用带 `.json` 后缀的临时文件和 `xray run -test -format json` 校验后才重启 Xray；若重启后 API 不可用，会尝试回滚原始配置。**自动回滚不等于业务恢复保证**，操作后仍需检查代理连接。
+
+**已配置 StatsService 的服务器无需修复**：运行普通安装命令即可；即使选择修复模式，若 API 查询已经正常，程序也会跳过 Xray 配置修改及重启。采用 `-confdir`、JSONC 注释、多实例、非标准 API 或非默认启动参数时，请人工合并统计配置，勿强行自动修复。
+
+### 4. 安装、升级后验收
 
 ```bash
 xraytop --version
-systemctl is-enabled xraytop-collector
-systemctl status xraytop-collector --no-pager
-journalctl -u xraytop-collector -n 30 --no-pager
-xraytop --data-source daemon --once --once-view 9
+sudo systemctl is-enabled xraytop-collector
+sudo systemctl is-active xray xraytop-collector
+sudo systemctl status xraytop-collector --no-pager
+sudo journalctl -u xraytop-collector -n 30 --no-pager
 
-jq '{
+# 本地统计 API（已启用时应可成功查询）
+sudo /usr/local/bin/xray api statsquery -s 127.0.0.1:10085
+
+# 只读查看 Collector 的历史快照
+sudo xraytop --data-source daemon --once --once-view 9
+
+# 进入终端界面；1=总览，6=来源 IP，8=NGINX，9=历史
+sudo xraytop
+```
+
+若 `StatsService: ONLINE` 且入站显示累计流量，说明 API 计数器已打通。刚启动时速率 `0 B/s` 很正常：需要有真实代理流量，并等待至少两次采样。NGINX 请求次数、当前 TCP 连接数、Xray accepted 事件数**不等于认证在线用户数**。
+
+进一步检查采集详情：
+
+```bash
+sudo jq '{
   nginx_ports: ((.snapshot.Nginx.Ports // []) | length),
   nginx_routes: ((.snapshot.Nginx.Routes // []) | length),
   nginx_error: .snapshot.NginxError,
-  tcp_connections: .snapshot.Live.Connections,
+  tcp_connections: (.snapshot.Live.Connections // 0),
   tcp_error: .snapshot.LiveError,
-  nginx_http_matches: .snapshot.Access.Matched,
+  nginx_http_matches: (.snapshot.Access.Matched // 0),
   access_error: .snapshot.AccessError,
-  xray_accepted: .snapshot.Recent.Events
+  xray_accepted: (.snapshot.Recent.Events // 0)
 }' /var/lib/xraytop/snapshot.json
 ```
 
-你这台 VPS 已验证 NGINX 为 **15 个入口端口、30 条代理路由**；其他机器可能不同。HTTP 请求数为 0 时请先检查 `access_error`。TCP 连接数及 Xray accepted 事件数都不是在线用户数。
+### 5. 从旧版本升级、自定义路径与故障排查
 
-**升级及自定义配置：** 以后再次执行同一脚本即可升级固定版本；选择其他已发布标签时设置 `XRAYTOP_VERSION`。对于不同 Xray 安装路径：
+升级 `v0.11.2-dev` 或其他旧版本时，只需再次下载当前 Release 的 `install.sh` 并运行普通安装命令；保留历史记录，不需要先卸载，也不需要重设已有 StatsService。特殊安装路径可通过以下参数指定：
 
 ```bash
 sudo env XRAYTOP_VERSION=v0.11.3-dev \
   XRAYTOP_CONFIG=/usr/local/etc/xray/config.json \
   XRAYTOP_XRAY_BIN=/usr/local/bin/xray \
+  XRAYTOP_API=127.0.0.1:10085 \
+  XRAYTOP_XRAY_UNIT=xray.service \
   bash install-xraytop.sh
 ```
 
-还支持 `XRAYTOP_API`、`XRAYTOP_XRAY_UNIT`、`XRAYTOP_NGINX_CONFIG`、`XRAYTOP_ACCESS_LOG`，使用 `bash install-xraytop.sh --help` 查看。自定义路径必须是无空格的绝对路径。
+另支持 `XRAYTOP_NGINX_CONFIG`、`XRAYTOP_ACCESS_LOG`；运行 `bash install-xraytop.sh --help` 查看参数。自定义路径必须是无空格的绝对路径。
 
-**旧版权限清理：** 若此前使用过 `10-cert-access.conf` / `20-nginx-log.conf` 解决 `nginx -T` 沙箱问题，安装器会提醒但不会擅自删除管理员覆盖文件；待新版本采集正常后再手动清理，保留日志组读取权限。要停止采集，运行 `systemctl disable --now xraytop-collector`；卸载前请先备份 `/var/lib/xraytop/ip-history.json`。
+- **API 显示 UNAVAILABLE**：确认 Xray 配置已启用 StatsService，监听地址与 `XRAYTOP_API` 一致，使用 `xray api statsquery` 测试；默认安装不会自动改变 Xray。
+- **安装修复被拒绝**：检查是否已有 API 配置、是否使用 `-confdir` 或 JSONC、实际 systemd 服务名与配置路径；根据提示人工检查，不建议强行覆盖。
+- **Collector 异常**：查看 `sudo journalctl -u xraytop-collector -n 100 --no-pager`；检查 `/var/lib/xraytop/snapshot.json` 更新时间及 NGINX 日志可读性。
+- **恢复配置**：自动修复的 Xray 原配置备份在 `/var/lib/xraytop/backups/<安装批次>/xray-config-*.json`。确认具体备份文件并先校验后，再人工恢复与重启服务；不要盲目覆盖现网配置。
 
-启动交互界面只需输入 `xraytop`，按 `6` 看来源 IP、`8` 看 HTTP、`9` 看历史；按 `q` 退出 TUI 后 systemd **仍继续采集**。
+历史文件位于 `/var/lib/xraytop/ip-history.json`，卸载前请另行备份。退出 TUI 不会停止后台采集；如需停止：
+
+```bash
+sudo systemctl disable --now xraytop-collector
+```
+
+安装器不会自行删除旧版 `10-cert-access.conf` 或 `20-nginx-log.conf` systemd 权限覆盖配置，需要管理员核对后清理。
 
 ## 编译和运行
 
