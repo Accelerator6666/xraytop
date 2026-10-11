@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 umask 077
 REPO="Accelerator6666/xraytop"
-VERSION="${XRAYTOP_VERSION:-v0.12.0-dev}"
+VERSION="${XRAYTOP_VERSION:-v0.12.1-dev}"
 BIN="/usr/local/bin/xraytop"
 UNIT="/etc/systemd/system/xraytop-collector.service"
 SERVICE="xraytop-collector.service"
@@ -22,7 +22,7 @@ XrayTop installer/upgrader (root, Linux/systemd)
   bash install.sh              Install or upgrade
   bash install.sh --help       Show help without changing the system
 Environment:
-  XRAYTOP_VERSION        Release tag (default: v0.12.0-dev)
+  XRAYTOP_VERSION        Release tag (default: v0.12.1-dev)
   XRAYTOP_CONFIG         Xray JSON/JSONC config (default /usr/local/etc/xray/config.json)
   XRAYTOP_XRAY_BIN       Local Xray executable (default command -v xray)
   XRAYTOP_API            Xray StatsService (default 127.0.0.1:10085)

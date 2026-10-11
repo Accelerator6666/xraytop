@@ -48,3 +48,40 @@ func TestEmptyHistoryNarrowFooter(t *testing.T) {
         if !strings.Contains(out,k) {t.Fatalf("missing %s: %s",k,out)}
     }
 }
+
+func TestHistoryResponsiveSSHWidths(t *testing.T) {
+ now:=time.Unix(6000*60,0)
+ snap:=collector.Snapshot{At:now,IPHistory:[]history.Summary{
+   {IP:"192.0.2.1",FirstSeen:now.Add(-time.Hour),LastSeen:now,CurrentTCP:2,PeakTCP:15,LastXray:7,LastHTTP:11,
+    Points:[]history.Point{{Minute:6000,TCP:2,Xray:7,HTTP:11}}},
+   {IP:"2001:db8:abcd:abcd:abcd:abcd:abcd:abcd",FirstSeen:now.Add(-2*time.Hour),LastSeen:now,
+    CurrentTCP:4,PeakTCP:6,LastXray:9,LastHTTP:2},
+ }}
+ for _,width:=range []int{58,66,78,80,100,110,140,160}{
+    screen:=Screen{Snapshot:snap,Width:width,Height:30,View:8,HistoryWindow:15}
+    out:=screen.Paint()
+    for _,part:=range []string{"192.0.2.1","TCP","Peak","Xray","HTTP","showing 1-2"}{
+       if !strings.Contains(out,part){t.Errorf("width %d lost %s: %q",width,part,out)}
+    }
+    for _,line:=range strings.Split(out,"\n"){
+       if n:=len([]rune(line)); n>width {
+          t.Errorf("width=%d rendered line=%d: %q",width,n,line)
+       }
+    }
+    if width>=66 && !strings.Contains(out,"  2   15    7   11") {
+      t.Errorf("width %d lost count columns: %s",width,out)
+    }
+    if width==80 && !strings.Contains(out,"Trend") {t.Errorf("80-col trend header lost: %s",out)}
+ }
+}
+func TestHistoryFilteredEmptyAndIPv6Detail(t *testing.T){
+ now:=time.Unix(6000*60,0)
+ snap:=collector.Snapshot{At:now,IPHistory:[]history.Summary{
+  {IP:"2001:db8:abcd:abcd:abcd:abcd:abcd:abcd",FirstSeen:now.Add(-time.Hour),LastSeen:now},
+ }}
+ s:=Screen{Snapshot:snap,Width:80,Height:24,View:8,IPQuery:"no-match"}
+ if !strings.Contains(s.Paint(),"No stored IP history matches"){t.Fatal("missing no-match message")}
+ s.IPQuery="2001:db8";s.HistoryDetail=true
+ out:=s.Paint()
+ if !strings.Contains(out,"SOURCE IP DETAIL: 2001:db8:abcd:abcd:abcd:abcd:abcd:abcd"){t.Fatal(out)}
+}

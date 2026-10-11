@@ -19,6 +19,8 @@ type App struct {
 	NoColor   bool
 	ClientFilter string
 	IPQuery string
+	WidthOverride int // optional for SSH clients reporting wrong PTY size
+	HeightOverride int
 }
 
 func (a App) Run(ctx context.Context) error {
@@ -93,6 +95,8 @@ func (a App) Run(ctx context.Context) error {
 	if clientFilter=="" {clientFilter="all"}
 	redraw := func() {
 		w, h := terminalSize()
+		if a.WidthOverride>0 {w=a.WidthOverride}
+		if a.HeightOverride>0 {h=a.HeightOverride}
 		fmt.Print(Screen{Snapshot: current, History: history, View: view, ClientFilter:clientFilter, IPQuery:ipQuery,SearchEditing:searchEditing, HistoryWindow:historyWindow,HistoryIndex:historyIndex,HistoryDetail:historyDetail,HistorySort:historySort, Width: w, Height: h, Color: !a.NoColor}.Paint())
 	}
 	redraw()
@@ -165,7 +169,7 @@ func (a App) Run(ctx context.Context) error {
 			case 'k','K':
 				if view==8 && historyIndex>0 {historyIndex--}
 			case 10,13:
-				if view==8 && len(current.IPHistory)>0 {historyDetail=!historyDetail}
+				if view==8 && len((Screen{Snapshot:current,IPQuery:ipQuery}).orderedHistory())>0 {historyDetail=!historyDetail}
 			case 't','T':
 				if view==8 {
 					switch historyWindow {case 5:historyWindow=15;case 15:historyWindow=30;case 30:historyWindow=60;default:historyWindow=5}
