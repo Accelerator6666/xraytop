@@ -85,3 +85,31 @@ func TestHistoryFilteredEmptyAndIPv6Detail(t *testing.T){
  out:=s.Paint()
  if !strings.Contains(out,"SOURCE IP DETAIL: 2001:db8:abcd:abcd:abcd:abcd:abcd:abcd"){t.Fatal(out)}
 }
+
+func TestHistoryPlainSparklineAcrossTerminalFonts(t *testing.T){
+ now:=time.Unix(6000*60,0)
+ points:=[]history.Point{
+  {Minute:5997,TCP:0},
+  {Minute:5998,TCP:2},
+  {Minute:5999,TCP:4},
+  {Minute:6000,TCP:8},
+ }
+ got:=historyTrendPlain(points,now,5,5,"tcp")
+ if got!="._:=@"{
+  t.Fatalf("expected missing / zero / low / mid / max markers, got %q",got)
+ }
+ for _,r:=range got{
+  if r>127{t.Fatalf("non-ASCII glyph %q",r)}
+ }
+ screen:=Screen{
+  Width:140,Height:25,View:8,Snapshot:collector.Snapshot{
+   At:now,IPHistory:[]history.Summary{{
+     IP:"192.0.2.1",LastSeen:now,Points:points,
+   }},
+  },
+ }
+ out:=screen.Paint()
+ if !strings.Contains(out,"Trend: . missing")||!strings.Contains(out,"._:=@"){
+  t.Fatalf("plain history sparkline or legend missing: %s",out)
+ }
+}

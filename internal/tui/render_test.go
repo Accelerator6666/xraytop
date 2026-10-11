@@ -110,3 +110,30 @@ func TestRecentSourceView(t *testing.T) {
 		}
 	}
 }
+
+func TestFooterAlwaysFitsWithQuitVisible(t *testing.T){
+ for width:=38;width<=178;width++{
+   footer:=footerForWidth(width,false)
+   if !strings.Contains(footer,"[q] Quit") && !strings.Contains(footer,"[q]Quit"){
+      t.Fatalf("width=%d lost Quit: %q",width,footer)
+   }
+   if len([]rune(footer))>width{
+      t.Fatalf("width=%d footer longer (%d): %q",width,len([]rune(footer)),footer)
+   }
+   for _,view:=range []int{0,8}{
+      out:=Screen{Width:width+2,Height:24,View:view,Snapshot:collector.Snapshot{At:time.Unix(0,0)}}.Paint()
+      lines:=strings.Split(out,"\n")
+      if !strings.Contains(lines[len(lines)-1],"[q]"){
+        t.Errorf("width=%d view=%d footer clipped: %q",width,view,lines[len(lines)-1])
+      }
+   }
+ }
+}
+func TestSettingsFooterAlwaysFits(t *testing.T){
+ for width:=38;width<=178;width++ {
+   got:=footerForWidth(width,true)
+   if len([]rune(got))>width||!strings.Contains(got,"[z]"){
+      t.Errorf("width=%d footer=%q",width,got)
+   }
+ }
+}

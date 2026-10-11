@@ -73,11 +73,11 @@ func (s Screen) historyLines(width, maxLines int) []string {
      row.CurrentTCP,row.PeakTCP,row.LastXray,row.LastHTTP))
    add(" ")
    plotWidth:=min(window,max(1,width-12))
-   add(" TCP   "+historyTrend(row.Points,s.Snapshot.At,window,plotWidth,"tcp"))
-   add(" XRAY  "+historyTrend(row.Points,s.Snapshot.At,window,plotWidth,"xray"))
-   add(" HTTP  "+historyTrend(row.Points,s.Snapshot.At,window,plotWidth,"http"))
+   add(" TCP   "+historyTrendPlain(row.Points,s.Snapshot.At,window,plotWidth,"tcp"))
+   add(" XRAY  "+historyTrendPlain(row.Points,s.Snapshot.At,window,plotWidth,"xray"))
+   add(" HTTP  "+historyTrendPlain(row.Points,s.Snapshot.At,window,plotWidth,"http"))
    add(" ")
-   add(" Each point = 1 minute.  · = missing sample   ▁ = observed zero.")
+   add(" Each point = 1 min. . missing | _ observed zero | : = + # @ intensity.")
    add(" XRAY / HTTP are 5-minute rolling counts, NOT cumulative traffic bytes.")
    add(" TCP sockets and accepted events are NOT authenticated online sessions.")
    return lines
@@ -116,7 +116,7 @@ func (s Screen) historyLines(width, maxLines int) []string {
        last,row.CurrentTCP,row.PeakTCP,row.LastXray,row.LastHTTP)
      remaining:=width-len([]rune(meta))-3
      if remaining>=4 {
-       meta+="  "+historyTrend(row.Points,s.Snapshot.At,window,min(remaining,15),"tcp")
+       meta+="  "+historyTrendPlain(row.Points,s.Snapshot.At,window,min(remaining,15),"tcp")
      }
      add(meta)
    }else if full {
@@ -124,18 +124,27 @@ func (s Screen) historyLines(width, maxLines int) []string {
        marker,truncate(row.IP,39),row.FirstSeen.Local().Format("01-02 15:04"),
        last,row.CurrentTCP,row.PeakTCP,row.LastXray,row.LastHTTP)
      trendWidth:=min(window,max(1,width-len([]rune(base))))
-     add(base+historyTrend(row.Points,s.Snapshot.At,window,trendWidth,"tcp"))
+     add(base+historyTrendPlain(row.Points,s.Snapshot.At,window,trendWidth,"tcp"))
    }else{
      base:=fmt.Sprintf("%s%-*s %-11s %3d %4d %4d %4d  ",
        marker,ipWidth,truncate(row.IP,ipWidth),last,
        row.CurrentTCP,row.PeakTCP,row.LastXray,row.LastHTTP)
      trendWidth:=min(window,max(1,width-len([]rune(base))))
-     add(base+historyTrend(row.Points,s.Snapshot.At,window,trendWidth,"tcp"))
+     add(base+historyTrendPlain(row.Points,s.Snapshot.At,window,trendWidth,"tcp"))
    }
  }
  add(fmt.Sprintf(" %d stored IPs | showing %d-%d | [j/k] scroll",len(rows),start+1,end))
- add(" XRAY/HTTP = rolling 5m; missing samples do NOT mean offline.")
+ add(" Trend: . missing, _ zero, : = + # @ relative level; XRAY/HTTP = rolling 5m.")
  return lines
+}
+
+// historyTrendPlain uses ASCII-only, fixed-width symbols so incompatible SSH
+// fonts cannot render solid-box Unicode bar glyphs. Unlike a simple 0/1
+// sparkline, it preserves relative intensity without implying exact counts:
+// . = missing, _ = sampled zero, : = low, = / + = middle, # / @ = high.
+func historyTrendPlain(points []history.Point,at time.Time,window,columns int,metric string)string {
+ trend:=historyTrend(points,at,window,columns,metric)
+ return strings.NewReplacer("·",".","▁","_","▂",":","▃",":","▄","=","▅","=","▆","+","▇","#","█","@").Replace(trend)
 }
 
 func historyTrend(points []history.Point,at time.Time,window,columns int,metric string) string {

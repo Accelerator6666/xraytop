@@ -16,7 +16,8 @@ func TestTerminalSettingsResponsivePanel(t *testing.T){
   for _,want:=range []string{"TERMINAL SETTINGS","Width:","Height:","ASCII graphics:"}{
    if !strings.Contains(out,want){t.Errorf("width=%d missing %q from %s",width,want,out)}
   }
-  if (width<82 && !strings.Contains(out,"[z]Back"))||(width>=82 && !strings.Contains(out,"[z]Close")) {t.Errorf("missing settings close at %d",width)}
+  expected:=footerForWidth(width-2,true)
+  if !strings.Contains(out,expected) {t.Errorf("settings footer was clipped at %d: want %q, got %q",width,expected,out)}
  }
 }
 func TestASCIIFallbackGraphics(t *testing.T){

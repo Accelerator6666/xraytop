@@ -247,15 +247,8 @@ func (s Screen) Paint() string {
 		lines = lines[:height-2]
 	}
 	add(ruler)
-	footer := " [1] Overview [2] In [3] Out [4] Protocols [5] Transports [6] IP Clients [7] IP+Inbound [8] NGINX [9] History [f] Filter [z] Settings [q] Quit"
-	if inner < 100 {
-		footer = " [1]Home [2]In [3]Out [4]Pr [5]Tr [6]IP [7]Tags [8]HTTP [9]Hist [z]Cfg [q]Quit"
-		if inner<78 {footer=" [1-9] Views [z] Settings [q] Quit"}
-	}
-	if s.View==9 {
-		footer=" [w]Width [h]Height [p]Probe [a]ASCII [r]Reset [s]Save [z]Close"
-		if inner<80 {footer=" [w]Col [h]Row [s]Save [z]Back"}
-	}
+	footer:=footerForWidth(inner,s.View==9)
+
 	add(footer)
 	var out string
 	if s.Color {
@@ -414,4 +407,30 @@ func safeUser(email string) string {
 // Preserve single-column width when substituting Unicode terminal bars.
 func asciiTerminalGraphics(s string)string{
  return strings.NewReplacer("─","-","▁",".","▂",":","▃","-","▄","=","▅","+","▆","*","▇","#","█","@","·",".","…",".").Replace(s)
+}
+
+ // footerForWidth selects a complete menu; it never passes a too-wide menu to
+ // the truncation helper (which would hide important shortcuts like [q] Quit).
+func footerForWidth(width int,settings bool)string {
+ var options []string
+ if settings {
+   options=[]string{
+    " [w] Width [h] Height [p] Probe [a] ASCII [r] Reset [s] Save [z]Close",
+    " [w] Col [h] Row [p] Probe [a] ASCII [s] Save [z]Close",
+    " [w] Col [h] Row [s] Save [z]Back",
+    " [z]Back",
+   }
+ }else{
+   options=[]string{
+    " [1] Overview [2] In [3] Out [4] Protocols [5] Transports [6] IP Clients [7] IP+Inbound [8] NGINX [9] History [f] Filter [z] Settings [q] Quit",
+    " [1] Home [2] In [3] Out [4] Protocol [5] Transport [6] IP [7] IP+In [8] NGINX [9] Hist [f] Filter [z] Setup [q] Quit",
+    " [1]Home [2]In [3]Out [4]Pr [5]Tr [6]IP [7]Tags [8]HTTP [9]Hist [z]Cfg [q]Quit",
+    " [1-9] Views [z] Settings [q] Quit",
+    " [q] Quit",
+   }
+ }
+ for _,item:=range options {
+   if utf8.RuneCountInString(item)<=width {return item}
+ }
+ return options[len(options)-1]
 }
