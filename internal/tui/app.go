@@ -18,6 +18,7 @@ type App struct {
 	Interval  time.Duration
 	NoColor   bool
 	ClientFilter string
+	IPQuery string
 }
 
 func (a App) Run(ctx context.Context) error {
@@ -81,6 +82,9 @@ func (a App) Run(ctx context.Context) error {
 	history := History{}
 	view := 0
 	clientFilter := a.ClientFilter
+	ipQuery:=a.IPQuery
+	searchBackup:=""
+	searchEditing:=false
 	historyWindow:=15
 	historyIndex:=0
 	historyDetail:=false
@@ -89,7 +93,7 @@ func (a App) Run(ctx context.Context) error {
 	if clientFilter=="" {clientFilter="all"}
 	redraw := func() {
 		w, h := terminalSize()
-		fmt.Print(Screen{Snapshot: current, History: history, View: view, ClientFilter:clientFilter, HistoryWindow:historyWindow,HistoryIndex:historyIndex,HistoryDetail:historyDetail,HistorySort:historySort, Width: w, Height: h, Color: !a.NoColor}.Paint())
+		fmt.Print(Screen{Snapshot: current, History: history, View: view, ClientFilter:clientFilter, IPQuery:ipQuery,SearchEditing:searchEditing, HistoryWindow:historyWindow,HistoryIndex:historyIndex,HistoryDetail:historyDetail,HistorySort:historySort, Width: w, Height: h, Color: !a.NoColor}.Paint())
 	}
 	redraw()
 	for {
@@ -114,6 +118,17 @@ func (a App) Run(ctx context.Context) error {
 			}
 			redraw()
 		case key := <-keys:
+			if searchEditing {
+				switch key {
+				case 27: ipQuery=searchBackup;searchEditing=false
+				case 10,13: searchEditing=false;historyIndex=0;historyDetail=false
+				case 127,8:if len(ipQuery)>0 {ipQuery=ipQuery[:len(ipQuery)-1];historyIndex=0;historyDetail=false}
+				case 21: ipQuery="";historyIndex=0;historyDetail=false
+				default: if key>=32 && key<=126 && len(ipQuery)<64 {ipQuery+=string(key);historyIndex=0;historyDetail=false}
+				}
+				redraw()
+				continue
+			}
 			// Translate ANSI Up/Down arrows into j/k without affecting
 			// other views or waiting on a blocking terminal read.
 			if key==27 {escapeState=1;continue}
@@ -123,6 +138,8 @@ func (a App) Run(ctx context.Context) error {
 				if key=='A' {key='k'} else if key=='B' {key='j'} else {continue}
 			}
 			switch key {
+			case '/':
+				if view==5||view==8 {searchBackup=ipQuery;searchEditing=true}
 			case 'q', 'Q', 3:
 				return nil
 			case '1':
@@ -144,7 +161,7 @@ func (a App) Run(ctx context.Context) error {
 			case '9':
 				view = 8
 			case 'j','J':
-				if view==8 && historyIndex<len(current.IPHistory)-1 {historyIndex++}
+				if view==8 && historyIndex<len((Screen{Snapshot:current,IPQuery:ipQuery}).orderedHistory())-1 {historyIndex++}
 			case 'k','K':
 				if view==8 && historyIndex>0 {historyIndex--}
 			case 10,13:

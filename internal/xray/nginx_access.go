@@ -70,47 +70,75 @@ func matchNginxPath(path, method string, status int, routes []NginxLocation) (Ng
 	return found,true
 }
 
-func ParseNginxAccess(data []byte, routes []NginxLocation, now time.Time) NginxAccess {
-	result := NginxAccess{CheckedAt:now}
-	groups := make(map[string]*NginxRequest)
-	// Ignore an incomplete first line when scanning a bounded file tail.
-	scanner := bufio.NewScanner(strings.NewReader(string(data)))
-	scanner.Buffer(make([]byte, 4096), 512*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		m := nginxCombined.FindStringSubmatch(line)
-		if len(m) != 6 { continue }
-		ip := net.ParseIP(m[1])
-		if ip == nil || ip.IsUnspecified() { continue }
-		at, err := time.Parse("02/Jan/2006:15:04:05 -0700", m[2])
-		if err != nil || at.Before(now.Add(-5*time.Minute)) || at.After(now.Add(30*time.Second)) { continue }
-		result.Total++
-		status,err := strconv.Atoi(m[5])
-		if err != nil { continue }
-		path,_,_ := strings.Cut(m[4], "?")
-		if !strings.HasPrefix(path,"/") || len(path) > 2048 { continue }
-		route,ok := matchNginxPath(path,m[3],status,routes)
-		if !ok { continue }
-		result.Matched++
-		key:=ip.String()+"\x00"+route.Inbound
-		row:=groups[key]
-		if row==nil {
-			row=&NginxRequest{IP:ip.String(),Inbound:route.Inbound,Transport:route.Transport}
-			groups[key]=row
-		}
-		row.Requests++
-		if (route.Transport=="WebSocket" && status==101) ||
-			(route.Transport=="gRPC" && status==200) { row.SuccessHTTP++ }
-		if at.After(row.LastSeen) {row.LastSeen=at}
-	}
-	for _,row:=range groups {result.Requests=append(result.Requests,*row)}
-	sort.Slice(result.Requests,func(i,j int)bool{
-		a,b:=result.Requests[i],result.Requests[j]
-		if a.Requests!=b.Requests{return a.Requests>b.Requests}
-		if !a.LastSeen.Equal(b.LastSeen) {return a.LastSeen.After(b.LastSeen)}
-		return a.IP<b.IP
-	})
-	return result
+// nginxLogEvent is intentionally metadata-only: no URI, user-agent,
+// headers, referer, or raw log line survive parsing.
+type nginxLogEvent struct {
+ at time.Time
+ request NginxRequest
+ matched bool
+}
+func parseNginxAccessLine(line string,routes []NginxLocation,now time.Time)(nginxLogEvent,bool){
+ m:=nginxCombined.FindStringSubmatch(line)
+ if len(m)!=6{return nginxLogEvent{},false}
+ ip:=net.ParseIP(m[1])
+ if ip==nil||ip.IsUnspecified(){return nginxLogEvent{},false}
+ at,err:=time.Parse("02/Jan/2006:15:04:05 -0700",m[2])
+ if err!=nil||at.Before(now.Add(-5*time.Minute))||at.After(now.Add(30*time.Second)){return nginxLogEvent{},false}
+ ev:=nginxLogEvent{at:at}
+ status,err:=strconv.Atoi(m[5])
+ if err!=nil{return nginxLogEvent{},false}
+ path,_,_:=strings.Cut(m[4],"?")
+ if !strings.HasPrefix(path,"/")||len(path)>2048{return ev,true}
+ route,ok:=matchNginxPath(path,m[3],status,routes)
+ if !ok{return ev,true}
+ ev.matched=true
+ ev.request=NginxRequest{
+    IP:ip.String(),Inbound:route.Inbound,Transport:route.Transport,
+    Requests:1,LastSeen:at,
+ }
+ if (route.Transport=="WebSocket" && status==101) ||
+    (route.Transport=="gRPC" && status==200) {ev.request.SuccessHTTP=1}
+ return ev,true
+}
+
+// AggregateNginxEvents reduces sanitized observations to 5-minute IP+inbound
+// rows without summing overlapping snapshots.
+func aggregateNginxEvents(events []nginxLogEvent,now time.Time) NginxAccess {
+ result:=NginxAccess{CheckedAt:now}
+ groups:=make(map[string]*NginxRequest)
+ for _,ev:=range events {
+   if ev.at.Before(now.Add(-5*time.Minute))||ev.at.After(now.Add(30*time.Second)){continue}
+   result.Total++
+   if !ev.matched{continue}
+   result.Matched++
+   key:=ev.request.IP+"\x00"+ev.request.Inbound
+   row:=groups[key]
+   if row==nil {
+     copy:=ev.request
+     groups[key]=&copy
+   } else {
+     row.Requests++
+     row.SuccessHTTP+=ev.request.SuccessHTTP
+     if ev.at.After(row.LastSeen){row.LastSeen=ev.at}
+   }
+ }
+ for _,row:=range groups {result.Requests=append(result.Requests,*row)}
+ sort.Slice(result.Requests,func(i,j int)bool{
+    a,b:=result.Requests[i],result.Requests[j]
+    if a.Requests!=b.Requests{return a.Requests>b.Requests}
+    if !a.LastSeen.Equal(b.LastSeen){return a.LastSeen.After(b.LastSeen)}
+    return a.IP<b.IP
+ })
+ return result
+}
+func ParseNginxAccess(data []byte,routes []NginxLocation,now time.Time) NginxAccess {
+ events:=make([]nginxLogEvent,0)
+ scanner:=bufio.NewScanner(strings.NewReader(string(data)))
+ scanner.Buffer(make([]byte,4096),512*1024)
+ for scanner.Scan(){
+   if ev,ok:=parseNginxAccessLine(scanner.Text(),routes,now);ok {events=append(events,ev)}
+ }
+ return aggregateNginxEvents(events,now)
 }
 
 // ReadNginxAccess is bounded to the final 2 MiB; it never reads the entire

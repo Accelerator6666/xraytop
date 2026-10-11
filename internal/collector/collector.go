@@ -46,6 +46,8 @@ type Collector struct {
 	NginxConfigFile string
 	NginxAccessPath string
 	HistoryStore *history.Store
+	nginxTailer xray.NginxTailer
+	journalTailer xray.JournalTailer
 	accessCache xray.NginxAccess
 	accessError string
 	nextAccess time.Time
@@ -124,7 +126,7 @@ func (c *Collector) Sample(ctx context.Context) Snapshot {
 	// IP-first monitoring needs no user email and does not query online-user RPCs.
 	// The source-IP journal cache refreshes independently of StatsService.
 	if c.JournalUnit != "" && !now.Before(c.nextRecent) && ctx.Err() == nil {
-		recent, err := xray.ReadRecentActivity(ctx, c.JournalUnit)
+		recent, err := c.journalTailer.Read(ctx, c.JournalUnit)
 		if err == nil {
 			c.recentCache, c.recentError = recent, ""
 		} else {
@@ -157,7 +159,7 @@ func (c *Collector) Sample(ctx context.Context) Snapshot {
 	// Access logs are optional and never read unless NGINX auto-discovery
 	// yielded a verified Xray-backed location. Read a bounded tail every 10s.
 	if c.NginxAccessPath != "" && len(snap.Nginx.Locations) > 0 && !now.Before(c.nextAccess) && ctx.Err() == nil {
-		access, e := xray.ReadNginxAccess(c.NginxAccessPath, snap.Nginx.Locations)
+		access, e := c.nginxTailer.Read(c.NginxAccessPath, snap.Nginx.Locations, now)
 		if e != nil { c.accessCache, c.accessError = xray.NginxAccess{}, e.Error() } else { c.accessCache, c.accessError = access, "" }
 		c.nextAccess = time.Now().Add(10*time.Second)
 	}

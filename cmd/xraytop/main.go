@@ -14,12 +14,13 @@ import (
 
 	"github.com/Accelerator6666/xraytop/internal/collector"
 	"github.com/Accelerator6666/xraytop/internal/daemon"
+	"github.com/Accelerator6666/xraytop/internal/doctor"
 	"github.com/Accelerator6666/xraytop/internal/history"
 	"github.com/Accelerator6666/xraytop/internal/tui"
 	"github.com/Accelerator6666/xraytop/internal/xray"
 )
 
-var version = "v0.11.3-dev"
+var version = "v0.12.0-dev"
 
 // configPaths supports repeated --config arguments for multi-file setups.
 type configPaths []string
@@ -29,6 +30,8 @@ func (p *configPaths) Set(s string) error { *p = append(*p, s); return nil }
 
 func main() {
 	versionFlag := flag.Bool("version", false, "show version")
+	doctorFlag := flag.Bool("doctor", false, "read-only local collector and configuration diagnostics")
+	ipSearch := flag.String("ip-search", "", "filter source IPs on views 6 and 9 (or use / in TUI)")
 	var configs configPaths
 	flag.Var(&configs, "config", "local Xray JSON/JSONC config file (repeatable; autodetected from process when omitted)")
 	configDir := flag.String("config-dir", "", "Xray -confdir path (optional; autodetected when omitted)")
@@ -76,6 +79,18 @@ func main() {
 		fmt.Fprintln(os.Stderr, "--clients-filter must be all, xray, http, or tcp")
 		os.Exit(2)
 	}
+	if *doctorFlag {
+		if len(configs)>1 {fmt.Fprintln(os.Stderr,"--doctor accepts one --config or --config-dir");os.Exit(2)}
+		configPath:=""
+		if len(configs)==1 {configPath=configs[0]}
+		if configPath=="" && *configDir=="" {configPath="/usr/local/etc/xray/config.json"}
+		ctx,cancel:=context.WithTimeout(context.Background(),12*time.Second)
+		defer cancel()
+		report:=doctor.Run(ctx,doctor.Options{SnapshotFile:*snapshotFile,XrayConfig:configPath,ConfigDir:*configDir,NginxConfig:*nginxConfigFile,AccessLog:*nginxAccess,XrayBin:*binary,API:*api})
+		fmt.Print(report.String())
+		if report.Failures()>0 {os.Exit(1)}
+		return
+	}
 	ports, err := xray.ParseIngressPorts(*portsFlag)
 	if err != nil { fmt.Fprintln(os.Stderr, "xraytop:", err); os.Exit(2) }
 
@@ -122,10 +137,10 @@ func main() {
 		defer cancel()
 		var snap collector.Snapshot
 		if source!=nil {snap=source(ctx)} else {snap=c.Sample(ctx)}
-		fmt.Print(tui.Screen{Snapshot:snap,Width:100,Height:24,View:*onceView-1,ClientFilter:*clientFilter,Color:false}.Paint(),"\n")
+		fmt.Print(tui.Screen{Snapshot:snap,Width:100,Height:24,View:*onceView-1,ClientFilter:*clientFilter,IPQuery:*ipSearch,Color:false}.Paint(),"\n")
 		return
 	}
-	app:=tui.App{Collector:c,Source:source,Interval:*interval,ClientFilter:*clientFilter,NoColor:*noColor||os.Getenv("NO_COLOR")!=""||os.Getenv("TERM")=="dumb"}
+	app:=tui.App{Collector:c,Source:source,Interval:*interval,ClientFilter:*clientFilter,IPQuery:*ipSearch,NoColor:*noColor||os.Getenv("NO_COLOR")!=""||os.Getenv("TERM")=="dumb"}
 	if err:=app.Run(context.Background());err!=nil {
 		fmt.Fprintln(os.Stderr,"xraytop:",err)
 		os.Exit(1)

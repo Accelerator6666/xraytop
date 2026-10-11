@@ -11,6 +11,11 @@ import (
 
 func (s Screen) orderedHistory() []history.Summary {
     rows:=append([]history.Summary(nil),s.Snapshot.IPHistory...)
+	if q:=strings.ToLower(strings.TrimSpace(s.IPQuery));q!="" {
+		filtered:=rows[:0]
+		for _,row:=range rows{if strings.Contains(strings.ToLower(row.IP),q){filtered=append(filtered,row)}}
+		rows=filtered
+	}
     sortMode:=s.HistorySort
     if sortMode=="" {sortMode="recent"}
     sort.SliceStable(rows,func(i,j int)bool {
@@ -39,7 +44,7 @@ func (s Screen) historyLines(width, maxLines int) []string {
     if window!=5 && window!=15 && window!=30 && window!=60 {window=15}
     mode:=s.HistorySort
     if mode=="" {mode="recent"}
-    add(fmt.Sprintf(" Window: %dm [t] | Sort: %s [s] | Select: [j/k] or arrows | [Enter] detail | [9] history",window,mode))
+    add(fmt.Sprintf(" Window: %dm [t] | Sort: %s [s] | [/] Search IP: %q | [j/k] select | [Enter] detail",window,mode,s.IPQuery))
     if s.Snapshot.HistoryError!="" {
         add(" Storage warning: "+s.Snapshot.HistoryError)
     }

@@ -93,3 +93,18 @@ and uses only stdlib. The TUI view 9 offers sorted IP histories, first/last
 observed timestamps and 5/15/30/60-minute TCP/Xray/HTTP sampled trends with
 missing-minute gaps distinguished from observed zeros. No background service
 runs when XrayTop exits.
+
+
+## v0.12 architecture corrections
+
+New source-IP observations are read incrementally in-process: NGINX log
+inode/offset and journalctl JSON cursor readers provide bounded five-minute
+windows. On cold start or after log rotation/overflow a window may be marked
+incomplete. Cursor positions are not persisted yet, so this is not lossless
+accounting across service restarts.
+
+**Since v0.11.1**, NGINX auto-discovery only parses the local main config and
+literal include files, not `nginx -T`; it does not read certificate/private
+key files or reopen NGINX logs. A disk config may be different from currently
+loaded config. `xraytop --doctor` only reports health; source IP search only
+filters TUI/output results.

@@ -29,6 +29,8 @@ type Screen struct {
 	History       History
 	View          int
 	ClientFilter string
+	IPQuery string
+	SearchEditing bool
 	HistoryWindow int
 	HistoryIndex int
 	HistoryDetail bool
@@ -119,11 +121,20 @@ func (s Screen) Paint() string {
 		if s.Snapshot.NginxError != "" { add(s.style(" NGINX discovery: "+s.Snapshot.NginxError, yellow)) }
 		if s.Snapshot.LiveError != "" { add(s.style(" TCP warning: "+s.Snapshot.LiveError,yellow)) }
 		if s.Snapshot.RecentError != "" { add(s.style(" Journal warning: "+s.Snapshot.RecentError,yellow)) }
+		if s.Snapshot.Recent.Truncated {add(s.style(" Journal gap: five-minute event window may be incomplete.",yellow))}
 		if s.Snapshot.AccessError != "" { add(s.style(" NGINX access: "+s.Snapshot.AccessError, yellow)) }
 		if len(s.Snapshot.Live.Ports)==0 { add(" No TCP ingress ports selected. Check NGINX auto discovery or use --ingress-ports.") }
+		searchLabel:="[/] Search IP"
+		if s.SearchEditing {searchLabel="Searching (Enter=apply, Esc=cancel)"}
+		add(fmt.Sprintf(" %s | query: %q",searchLabel,s.IPQuery))
 		filter:=s.ClientFilter
 		if filter=="" { filter="all" }
 		clients:=xray.MergeObservedClientsWithHTTP(s.Snapshot.Recent.Sources,s.Snapshot.Catalog,s.Snapshot.Live,s.Snapshot.Access)
+		if q:=strings.ToLower(strings.TrimSpace(s.IPQuery));q!="" {
+			matched:=clients[:0]
+			for _,cl:=range clients {if strings.Contains(strings.ToLower(cl.IP),q){matched=append(matched,cl)}}
+			clients=matched
+		}
 		xrayCount,httpCount,tcpCount:=0,0,0
 		for _,client:=range clients {
 			switch client.Evidence() {
@@ -191,8 +202,8 @@ func (s Screen) Paint() string {
 			meta:=req.Inbound+" / "+req.Transport
 			add(fmt.Sprintf(" %-39s %-29s %5d %8d   %s",truncate(req.IP,39),truncate(meta,29),req.Requests,req.SuccessHTTP,req.LastSeen.Local().Format("15:04:05")))
 		}
-		add(fmt.Sprintf(" Matched %d / %d recent HTTP requests (last 2 MiB of access.log)",s.Snapshot.Access.Matched,s.Snapshot.Access.Total))
-		if s.Snapshot.Access.Truncated {add(" Bounded log tail: earlier requests may be omitted, even within the 5-min window.")}
+		add(fmt.Sprintf(" Matched %d / %d recent HTTP requests (incremental 5m observation)",s.Snapshot.Access.Matched,s.Snapshot.Access.Total))
+		if s.Snapshot.Access.Truncated {add(" Partial HTTP evidence: cold start/rotation/overflow; 5m window may be incomplete.")}
 		add(" 101/200 means successful HTTP handshake/response, NOT an authenticated VLESS session.")
 	case 8:
 		for _,line:=range s.historyLines(inner,max(1,height-len(lines)-4)) {add(line)}

@@ -28,6 +28,7 @@ type RecentActivity struct {
 	Sources   []RecentSource
 	CheckedAt time.Time
 	Events    int
+	Truncated bool // upstream journal cursor batch overflow; last five-minute window may be incomplete
 }
 
 // ReadRecentActivity reads only systemd journal entries from the local host.
