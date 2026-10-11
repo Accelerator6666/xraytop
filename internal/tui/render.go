@@ -37,6 +37,12 @@ type Screen struct {
 	HistorySort string
 	Width, Height int
 	Color         bool
+	ASCII bool
+	TerminalPrefs TerminalPreferences
+	TerminalSource string
+	TerminalPTYWidth, TerminalPTYHeight int
+	TerminalANSIWidth, TerminalANSIHeight int
+	SettingsMessage string
 }
 
 const (
@@ -88,6 +94,23 @@ func (s Screen) Paint() string {
 	}
 	add(ruler)
 	switch s.View {
+	case 9:
+		add(s.style(" TERMINAL SETTINGS  ([z] close, [s] save to user config)",bold))
+		add(ruler)
+		w:= "auto";if s.TerminalPrefs.Columns>0 {w=fmt.Sprint(s.TerminalPrefs.Columns)}
+		h:= "auto";if s.TerminalPrefs.Rows>0 {h=fmt.Sprint(s.TerminalPrefs.Rows)}
+		query:="on";if s.TerminalPrefs.DisableQuery {query="off"}
+		ascii:="off";if s.TerminalPrefs.ASCII {ascii="on"}
+		add(fmt.Sprintf(" Effective geometry: %d cols x %d rows (%s)",s.TerminalPTYWidth,s.TerminalPTYHeight,s.TerminalSource))
+		if s.TerminalANSIWidth>0 {add(fmt.Sprintf(" ANSI reply: %d cols x %d rows",s.TerminalANSIWidth,s.TerminalANSIHeight))}
+		add(fmt.Sprintf(" [w] Width:  %s (auto / 80 / 100 / 120 / 140 / 160 / 180)",w))
+		add(fmt.Sprintf(" [h] Height: %s (auto / 24 / 30 / 40 / 45 / 50 / 60)",h))
+		add(fmt.Sprintf(" [p] ANSI size probe: %s (CSI 18t, bounded timeout)",query))
+		add(fmt.Sprintf(" [a] ASCII graphics: %s (fallback for unsupported Unicode fonts)",ascii))
+		add(" [r] Reset defaults   [s] Save (0600)   [z] Cancel/close")
+		add(" Auto order: CLI override > saved size > terminal reply > PTY.")
+		add(" Unsupported terminal reply? PTY is used without blocking input.")
+		if s.SettingsMessage!="" {add(s.style(" "+s.SettingsMessage,yellow))}
 	case 0:
 		add(s.style(" TRAFFIC  (inbound counters; not duplicated with outbound)", bold))
 		if !s.Snapshot.Traffic.HasRates {
@@ -224,15 +247,21 @@ func (s Screen) Paint() string {
 		lines = lines[:height-2]
 	}
 	add(ruler)
-	footer := " [1] Overview [2] In [3] Out [4] Protocols [5] Transports [6] IP Clients [7] IP+Inbound [8] NGINX [9] History [f] Filter [q] Quit"
+	footer := " [1] Overview [2] In [3] Out [4] Protocols [5] Transports [6] IP Clients [7] IP+Inbound [8] NGINX [9] History [f] Filter [z] Settings [q] Quit"
 	if inner < 100 {
-		footer = " [1]Home [2]In [3]Out [4]Proto [5]Trans [6]IP [7]Tags [8]HTTP [9]Hist [q]Quit"
+		footer = " [1]Home [2]In [3]Out [4]Proto [5]Trans [6]IP [7]Tags [8]HTTP [9]Hist [z]Setup [q]Quit"
+	}
+	if s.View==9 {
+		footer=" [w]Width [h]Height [p]Probe [a]ASCII [r]Reset [s]Save [z]Close"
+		if inner<80 {footer=" [w]Col [h]Row [s]Save [z]Back"}
 	}
 	add(footer)
+	var out string
 	if s.Color {
-		return "\x1b[H" + strings.Join(lines, "\x1b[K\r\n") + "\x1b[J"
-	}
-	return strings.Join(lines, "\n")
+		out="\x1b[H"+strings.Join(lines,"\x1b[K\r\n")+"\x1b[J"
+	}else{out=strings.Join(lines,"\n")}
+	if s.ASCII {out=asciiTerminalGraphics(out)}
+	return out
 }
 
 func endpointHeader(width int) string {
@@ -379,4 +408,9 @@ func safeUser(email string) string {
 		b.WriteRune(r)
 	}
 	return b.String()
+}
+
+// Preserve single-column width when substituting Unicode terminal bars.
+func asciiTerminalGraphics(s string)string{
+ return strings.NewReplacer("─","-","▁",".","▂",":","▃","-","▄","=","▅","+","▆","*","▇","#","█","@","·",".","…",".").Replace(s)
 }

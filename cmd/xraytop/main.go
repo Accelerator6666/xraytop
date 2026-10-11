@@ -20,7 +20,7 @@ import (
 	"github.com/Accelerator6666/xraytop/internal/xray"
 )
 
-var version = "v0.12.1-dev"
+var version = "v0.12.2-dev"
 
 // configPaths supports repeated --config arguments for multi-file setups.
 type configPaths []string
@@ -34,6 +34,7 @@ func main() {
 	ipSearch := flag.String("ip-search", "", "filter source IPs on views 6 and 9 (or use / in TUI)")
 	tuiCols := flag.Int("tui-cols", 0, "override SSH-reported TUI columns (0=auto; only use if your terminal is actually wider)")
 	tuiRows := flag.Int("tui-rows", 0, "override SSH-reported TUI rows (0=auto; only use if your terminal is actually taller)")
+	tuiASCII := flag.Bool("tui-ascii", false, "render plain ASCII graphics for terminals without Unicode font support")
 	var configs configPaths
 	flag.Var(&configs, "config", "local Xray JSON/JSONC config file (repeatable; autodetected from process when omitted)")
 	configDir := flag.String("config-dir", "", "Xray -confdir path (optional; autodetected when omitted)")
@@ -145,7 +146,7 @@ func main() {
 		fmt.Print(tui.Screen{Snapshot:snap,Width:100,Height:24,View:*onceView-1,ClientFilter:*clientFilter,IPQuery:*ipSearch,Color:false}.Paint(),"\n")
 		return
 	}
-	app:=tui.App{Collector:c,Source:source,Interval:*interval,ClientFilter:*clientFilter,IPQuery:*ipSearch,WidthOverride:*tuiCols,HeightOverride:*tuiRows,NoColor:*noColor||os.Getenv("NO_COLOR")!=""||os.Getenv("TERM")=="dumb"}
+	app:=tui.App{Collector:c,Source:source,Interval:*interval,ClientFilter:*clientFilter,IPQuery:*ipSearch,WidthOverride:*tuiCols,HeightOverride:*tuiRows,ForceASCII:*tuiASCII,NoColor:*noColor||os.Getenv("NO_COLOR")!=""||os.Getenv("TERM")=="dumb"}
 	if err:=app.Run(context.Background());err!=nil {
 		fmt.Fprintln(os.Stderr,"xraytop:",err)
 		os.Exit(1)

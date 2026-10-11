@@ -4,7 +4,7 @@
 
 **XrayTop** 是一个用于 **Linux 本机 Xray-core** 的只读终端监控程序，支持按**代理协议**和**传输方式**独立查看统计信息。适合同时运行 VLESS + gRPC、VLESS + WebSocket、VLESS + XHTTP、VMess、Trojan 等入站的服务器；可识别 NGINX 反代后连接 Xray 的 Unix Socket 监听路径。
 
-> **v0.12.1-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
+> **v0.12.2-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
 
 ## 工作原理
 
@@ -16,7 +16,7 @@
 匹配不到的标签仍会展示为 `Unknown`，绝不根据名称（例如 `grpc-01`）臆测协议。配置存在但没有统计计数器时显示 `-`，不当作 0 B。聚合总流量只计算入站统计，避免入站与出站重复计算。协议汇总和传输汇总是同一流量的两种分类，不能彼此相加。
 
 
-## 安装、升级与 StatsService 配置（v0.12.1-dev）
+## 安装、升级与 StatsService 配置（v0.12.2-dev）
 
 ### 1. 安装前准备
 
@@ -26,11 +26,11 @@
 
 ### 2. 首次安装（推荐）
 
-从固定版本 [v0.12.1-dev Release](https://github.com/Accelerator6666/xraytop/releases/tag/v0.12.1-dev) 下载安装脚本，先阅读再运行：
+从固定版本 [v0.12.2-dev Release](https://github.com/Accelerator6666/xraytop/releases/tag/v0.12.2-dev) 下载安装脚本，先阅读再运行：
 
 ```bash
 curl -fL --retry 3 -o install-xraytop.sh \
-  https://github.com/Accelerator6666/xraytop/releases/download/v0.12.1-dev/install.sh
+  https://github.com/Accelerator6666/xraytop/releases/download/v0.12.2-dev/install.sh
 
 less install-xraytop.sh
 sudo bash install-xraytop.sh
@@ -39,7 +39,7 @@ sudo bash install-xraytop.sh
 已经审核并信任安装脚本时，也可一行安装（直接执行远程脚本的安全性低于先下载审核）：
 
 ```bash
-curl -fsSL https://github.com/Accelerator6666/xraytop/releases/download/v0.12.1-dev/install.sh | sudo bash
+curl -fsSL https://github.com/Accelerator6666/xraytop/releases/download/v0.12.2-dev/install.sh | sudo bash
 ```
 
 安装器会自动识别 AMD64/ARM64，从同一 Release 下载 XrayTop、systemd 服务文件和 SHA256SUMS，验证二进制及服务文件校验和与版本，部署 `/usr/local/bin/xraytop` 和 `xraytop-collector.service`，并检查后台快照是否刷新。原程序与服务文件备份在 `/var/lib/xraytop/backups/`；现有 `/var/lib/xraytop/ip-history.json` 不会被覆盖。日常安装/升级只重启 Collector。
@@ -110,7 +110,7 @@ sudo jq '{
 升级 `v0.11.2-dev` 或其他旧版本时，只需再次下载当前 Release 的 `install.sh` 并运行普通安装命令；保留历史记录，不需要先卸载，也不需要重设已有 StatsService。特殊安装路径可通过以下参数指定：
 
 ```bash
-sudo env XRAYTOP_VERSION=v0.12.1-dev \
+sudo env XRAYTOP_VERSION=v0.12.2-dev \
   XRAYTOP_CONFIG=/usr/local/etc/xray/config.json \
   XRAYTOP_XRAY_BIN=/usr/local/bin/xray \
   XRAYTOP_API=127.0.0.1:10085 \
@@ -377,7 +377,7 @@ systemctl status xraytop-collector --no-pager
 
 ## v0.12：增量采集、Doctor 自检与来源 IP 搜索
 
-**v0.12.1-dev** 对高流量 VPS 的数据采集作了重要改进：
+**v0.12.2-dev** 对高流量 VPS 的数据采集作了重要改进：
 
 - **NGINX access.log**：在采集进程中记录文件 inode 和偏移量，仅增量读取新内容；冷启动从最后最多 2 MiB 初始化。仅保留最近 5 分钟的来源 IP／入站／HTTP 状态元数据，不保存 URL、查询参数或原始日志。轮转、截断和处理限额可能导致窗口不完整，界面会明确提示。
 - **Xray journal**：使用 `journalctl --output=json` 与 `__CURSOR` 逐批读取新记录，避免每次重复查询最近 500 条；每批有大小和行数上限。
@@ -415,3 +415,27 @@ xraytop --tui-cols 120 --tui-rows 40
 ```
 
 默认两项为 0（使用终端上报尺寸）；错误地把覆盖值设得过大可能导致文本自动折行。
+
+
+## v0.12.2：跨 SSH 客户端的终端适配
+
+直接运行 `xraytop` 时，程序先读取 PTY 当前尺寸（TIOCGWINSZ），再**非阻塞**发出 xterm 兼容的 `CSI 18t` 文本区域尺寸查询。若客户端支持并返回合法的 `ESC[8;行;列t`，则在当前会话自动重绘，窗口大小变化时再次检测。**并非所有 SSH 客户端支持该协议**：无响应或不可信响应会使用 PTY 尺寸，不会阻塞界面；无法通过终端协议或 PTY 获得真实大小时，无法保证自动扩展到物理窗口。
+
+TUI 新增 **`z` 终端设置页**，使用 `w` 切换列数（auto / 80 / 100 / 120 / 140 / 160 / 180）、`h` 切换行数（auto / 24 / 30 / 40 / 45 / 50 / 60）、`p` 开关主动尺寸协商、`a` 开关 ASCII 绘图、`r` 恢复默认、`s` 保存设置、`z` 或 Esc 取消。这些选项保存在当前运行用户的 `~/.config/xraytop/terminal.json`（也遵循 `XDG_CONFIG_HOME`），权限为 `0600`。不同 VPS 用户分别拥有各自的配置，不影响后台采集器。
+
+尺寸选择优先级：**命令行 `--tui-cols`/`--tui-rows` > 用户保存尺寸 > ANSI 终端响应 > PTY 上报值**。如自动检测失败，可仅保存一次尺寸预设，后续无需额外参数；如终端不支持 Unicode 字符，可选 `--tui-ascii` 或在设置页打开 ASCII 模式。
+
+```bash
+xraytop
+# 在 TUI 按 z 进入终端设置
+
+# 也可以手动覆盖（请确保真实窗口至少容纳这些行列）
+xraytop --tui-cols 140 --tui-rows 45
+xraytop --tui-ascii
+
+# 检查 SSH 上报值
+stty size
+```
+
+旧版普通 SSH 用户无需升级 Xray/NGINX，也无需修改 StatsService。只有 TUI 的终端交互和本地用户偏好发生变化。`TERM=dumb` 不发送尺寸查询。
+
