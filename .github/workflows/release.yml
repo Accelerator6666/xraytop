@@ -25,7 +25,8 @@ jobs:
           cache: true
       - name: Validate
         run: |
-          bash -n scripts/install.sh
+          bash -n scripts/install.sh scripts/setup-stats.sh tests/test-setup-stats.sh
+          bash tests/test-setup-stats.sh
           bash scripts/install.sh --help | grep -q XRAYTOP_VERSION
           go test ./...
           go vet ./...
@@ -35,20 +36,21 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/xraytop-linux-amd64 ./cmd/xraytop
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dist/xraytop-linux-arm64 ./cmd/xraytop
           cp scripts/install.sh dist/install.sh
+          cp scripts/setup-stats.sh dist/setup-stats.sh
           cp packaging/systemd/xraytop-collector.service dist/xraytop-collector.service
           cd dist
-          sha256sum xraytop-linux-amd64 xraytop-linux-arm64 install.sh xraytop-collector.service > SHA256SUMS
+          sha256sum xraytop-linux-amd64 xraytop-linux-arm64 install.sh setup-stats.sh xraytop-collector.service > SHA256SUMS
       - name: Publish preview release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v0.11.2-dev"
+          TAG="v0.11.3-dev"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/xraytop-linux-amd64 dist/xraytop-linux-arm64 dist/install.sh dist/xraytop-collector.service dist/SHA256SUMS --clobber
+            gh release upload "$TAG" dist/xraytop-linux-amd64 dist/xraytop-linux-arm64 dist/install.sh dist/setup-stats.sh dist/xraytop-collector.service dist/SHA256SUMS --clobber
           else
-            gh release create "$TAG" dist/xraytop-linux-amd64 dist/xraytop-linux-arm64 dist/install.sh dist/xraytop-collector.service dist/SHA256SUMS \
+            gh release create "$TAG" dist/xraytop-linux-amd64 dist/xraytop-linux-arm64 dist/install.sh dist/setup-stats.sh dist/xraytop-collector.service dist/SHA256SUMS \
               --target "$GITHUB_SHA" \
-              --title "XrayTop v0.11.2-dev" \
-              --notes "Release-pinned SHA256-verified one-command installer, hardened systemd collector template, automatic history preservation and upgrade rollback." \
+              --title "XrayTop v0.11.3-dev" \
+              --notes "Adds opt-in StatsService setup with Xray configuration backup, validation and rollback; default remains read-only." \
               --prerelease
           fi

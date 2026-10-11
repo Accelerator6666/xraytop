@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 umask 077
 REPO="Accelerator6666/xraytop"
-VERSION="${XRAYTOP_VERSION:-v0.11.2-dev}"
+VERSION="${XRAYTOP_VERSION:-v0.11.3-dev}"
 BIN="/usr/local/bin/xraytop"
 UNIT="/etc/systemd/system/xraytop-collector.service"
 SERVICE="xraytop-collector.service"
@@ -14,6 +14,7 @@ API="${XRAYTOP_API:-127.0.0.1:10085}"
 NGINX_CONFIG="${XRAYTOP_NGINX_CONFIG:-/etc/nginx/nginx.conf}"
 ACCESS_LOG="${XRAYTOP_ACCESS_LOG:-/var/log/nginx/access.log}"
 XRAY_UNIT="${XRAYTOP_XRAY_UNIT:-xray.service}"
+SETUP_STATS="${XRAYTOP_SETUP_STATS:-0}"
 
 help() {
 cat <<'HELP'
@@ -21,14 +22,15 @@ XrayTop installer/upgrader (root, Linux/systemd)
   bash install.sh              Install or upgrade
   bash install.sh --help       Show help without changing the system
 Environment:
-  XRAYTOP_VERSION        Release tag (default: v0.11.2-dev)
+  XRAYTOP_VERSION        Release tag (default: v0.11.3-dev)
   XRAYTOP_CONFIG         Xray JSON/JSONC config (default /usr/local/etc/xray/config.json)
   XRAYTOP_XRAY_BIN       Local Xray executable (default command -v xray)
   XRAYTOP_API            Xray StatsService (default 127.0.0.1:10085)
   XRAYTOP_XRAY_UNIT      Xray systemd unit (default xray.service)
   XRAYTOP_NGINX_CONFIG   NGINX primary config (default /etc/nginx/nginx.conf)
   XRAYTOP_ACCESS_LOG     NGINX combined log (default /var/log/nginx/access.log)
-Only the xraytop-collector service is stopped/restarted. No Xray/NGINX changes.
+  XRAYTOP_SETUP_STATS    0: diagnose only (default); 1: opt in to backup/modify/restart Xray
+Default mode never changes Xray/NGINX. XRAYTOP_SETUP_STATS=1 may restart Xray.
 HELP
 }
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then help; exit 0; fi
@@ -53,6 +55,7 @@ for p in "$CONFIG" "$XRAY_BIN" "$NGINX_CONFIG" "$ACCESS_LOG"; do
     echo "ERROR: invalid absolute path (spaces unsupported): $p" >&2; exit 2;
   }
 done
+[[ "$SETUP_STATS" == 0 || "$SETUP_STATS" == 1 ]] || { echo "ERROR: XRAYTOP_SETUP_STATS must be 0 or 1" >&2; exit 2; }
 [[ "$API" =~ ^[a-zA-Z0-9.:_-]+$ ]] || { echo "ERROR: invalid API address" >&2; exit 2; }
 [[ "$XRAY_UNIT" =~ ^[a-zA-Z0-9@._-]+[.]service$ ]] || { echo "ERROR: invalid Xray unit" >&2; exit 2; }
 [[ -x "$XRAY_BIN" && -r "$CONFIG" && -r "$NGINX_CONFIG" ]] || {
@@ -138,7 +141,7 @@ install -d -m 0700 "$BACKUP"
 if [[ -f "$BIN" ]]; then cp -a "$BIN" "$BACKUP/xraytop"; HAD_BIN=1; fi
 if [[ -f "$UNIT" ]]; then cp -a "$UNIT" "$BACKUP/collector.service"; HAD_UNIT=1; fi
 if systemctl is-active --quiet "$SERVICE"; then WAS_ACTIVE=1; fi
-if systemctl is-enabled --quiet "$SERVICE"; then WAS_ENABLED=1; fi
+if [[ -f "$UNIT" ]] && systemctl is-enabled --quiet "$SERVICE" 2>/dev/null; then WAS_ENABLED=1; fi
 
 CHANGED=1
 if (( WAS_ACTIVE )); then systemctl stop "$SERVICE"; fi
@@ -175,6 +178,25 @@ if command -v jq >/dev/null 2>&1; then
     access_error: .snapshot.AccessError,
     xray_accepted: (.snapshot.Recent.Events // 0)
   }' "$STATE/snapshot.json" || true
+fi
+echo "==> Checking local Xray StatsService at $API"
+if "$XRAY_BIN" api statsquery -s "$API" >/dev/null 2>&1; then
+  echo "[PASS] StatsService online"
+elif [[ "$SETUP_STATS" == 1 ]]; then
+  echo "[INFO] Explicit StatsService setup requested. Xray may briefly restart."
+  # Fetch from the SAME pinned release; SHA256SUMS must cover the helper.
+  fetch "setup-stats.sh" "setup-stats.sh"
+  want="$(awk '$2 == "setup-stats.sh" {print $1}' "$TMP/SHA256SUMS")"
+  actual="$(sha256sum "$TMP/setup-stats.sh")"
+  actual="${actual%% *}"
+  [[ "$want" =~ ^[0-9a-fA-F]{64}$ && "${actual,,}" == "${want,,}" ]] || {
+    echo "ERROR: setup-stats.sh SHA256 verification failed" >&2; exit 1;
+  }
+  bash "$TMP/setup-stats.sh" "$CONFIG" "$XRAY_BIN" "$API" "$XRAY_UNIT" "$BACKUP"
+  systemctl restart "$SERVICE"
+else
+  echo "[WARN] Xray StatsService unavailable: $API"
+  echo "       To authorize backup/configuration and Xray restart, run installer with XRAYTOP_SETUP_STATS=1"
 fi
 if [[ -e /etc/systemd/system/xraytop-collector.service.d/10-cert-access.conf ||
       -e /etc/systemd/system/xraytop-collector.service.d/20-nginx-log.conf ]]; then

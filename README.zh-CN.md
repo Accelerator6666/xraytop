@@ -4,7 +4,7 @@
 
 **XrayTop** 是一个用于 **Linux 本机 Xray-core** 的只读终端监控程序，支持按**代理协议**和**传输方式**独立查看统计信息。适合同时运行 VLESS + gRPC、VLESS + WebSocket、VLESS + XHTTP、VMess、Trojan 等入站的服务器；可识别 NGINX 反代后连接 Xray 的 Unix Socket 监听路径。
 
-> **v0.11.2-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
+> **v0.11.3-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
 
 ## 工作原理
 
@@ -18,13 +18,13 @@
 
 ## 一键安装与升级（推荐）
 
-**适用：** Linux + systemd（Debian/Ubuntu 等）、AMD64/ARM64，机器上已经运行 Xray 和 NGINX。需要 root/sudo、curl 和 sha256sum。安装器**不修改、不重启 Xray 或 NGINX**，也不会自动启用 Xray StatsService。
+**适用：** Linux + systemd（Debian/Ubuntu 等）、AMD64/ARM64，机器上已经运行 Xray 和 NGINX。需要 root/sudo、curl 和 sha256sum。安装器默认**不修改、不重启 Xray 或 NGINX**；仅在明确设置 `XRAYTOP_SETUP_STATS=1` 时，才尝试备份配置、启用 StatsService 并重启 Xray。
 
 推荐从固定版本 Release 下载脚本，查看内容后安装：
 
 ```bash
 curl -fL --retry 3 -o install-xraytop.sh \
-  https://github.com/Accelerator6666/xraytop/releases/download/v0.11.2-dev/install.sh
+  https://github.com/Accelerator6666/xraytop/releases/download/v0.11.3-dev/install.sh
 less install-xraytop.sh
 sudo bash install-xraytop.sh
 ```
@@ -32,7 +32,7 @@ sudo bash install-xraytop.sh
 如果已审核并信任脚本，也可使用真正的单行命令（直接执行网络脚本不如上述做法安全）：
 
 ```bash
-curl -fsSL https://github.com/Accelerator6666/xraytop/releases/download/v0.11.2-dev/install.sh | sudo bash
+curl -fsSL https://github.com/Accelerator6666/xraytop/releases/download/v0.11.3-dev/install.sh | sudo bash
 ```
 
 脚本会完成整个流程：
@@ -42,6 +42,14 @@ curl -fsSL https://github.com/Accelerator6666/xraytop/releases/download/v0.11.2-
 3. 创建权限 `0700` 的 `/var/lib/xraytop`；不覆盖现有 `ip-history.json`，仅在没有历史时导入旧的 `/root/.local/state/xraytop/ip-history.json`。
 4. 安装 `/usr/local/bin/xraytop`、配置后台服务及私有目录；根据 NGINX access.log 所属组设置只读组权限（通常 `adm`），保持 `ProtectHome=true`、`ProtectSystem=strict` 和空的 capabilities。
 5. 运行 `systemctl enable` 启用开机启动、启动采集并检查新鲜快照；失败时尝试回滚程序与 service 文件。
+
+**可选的 StatsService 自动修复：** 安装后会自动检查 API。默认只提示，不修改 Xray。如果明确授权修复，请先下载并检查安装脚本，然后执行：
+
+```bash
+sudo env XRAYTOP_SETUP_STATS=1 bash install-xraytop.sh
+```
+
+此模式需要 `jq`，只支持单一 JSON 配置和 `127.0.0.1:PORT` 本地 API。已有 API、配置不明确或标签冲突时会拒绝修改。修复助手与安装版本一致且会进行 SHA256 校验，先备份原配置，再以 `.json` 临时文件及 `-format json` 验证；重启 Xray 后检查 API，失败时尝试回滚。操作可能中断现有代理连接，建议通过独立 SSH 连接执行。
 
 **安装、升级后的验收：**
 
@@ -69,7 +77,7 @@ jq '{
 **升级及自定义配置：** 以后再次执行同一脚本即可升级固定版本；选择其他已发布标签时设置 `XRAYTOP_VERSION`。对于不同 Xray 安装路径：
 
 ```bash
-sudo env XRAYTOP_VERSION=v0.11.2-dev \
+sudo env XRAYTOP_VERSION=v0.11.3-dev \
   XRAYTOP_CONFIG=/usr/local/etc/xray/config.json \
   XRAYTOP_XRAY_BIN=/usr/local/bin/xray \
   bash install-xraytop.sh

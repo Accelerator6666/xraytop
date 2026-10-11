@@ -17,7 +17,8 @@ jobs:
           cache: true
       - name: Check installer syntax and help
         run: |
-          bash -n scripts/install.sh
+          bash -n scripts/install.sh scripts/setup-stats.sh tests/test-setup-stats.sh
+          bash tests/test-setup-stats.sh
           bash scripts/install.sh --help | grep -q XRAYTOP_VERSION
       - run: go test ./...
       - run: go vet ./...
