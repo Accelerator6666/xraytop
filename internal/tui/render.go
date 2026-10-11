@@ -423,7 +423,7 @@ func footerForWidth(width int,settings bool)string {
  }else{
    options=[]string{
     " [1] Overview [2] In [3] Out [4] Protocols [5] Transports [6] IP Clients [7] IP+Inbound [8] NGINX [9] History [f] Filter [z] Settings [q] Quit",
-    " [1] Home [2] In [3] Out [4] Protocol [5] Transport [6] IP [7] IP+In [8] NGINX [9] Hist [f] Filter [z] Setup [q] Quit",
+    " [1] Home [2] In [3] Out [4] Proto [5] Trans [6] IP Clients [7] IP+In [8] NGINX [9] Hist [f] Filter [z] Setup [q] Quit",
     " [1]Home [2]In [3]Out [4]Pr [5]Tr [6]IP [7]Tags [8]HTTP [9]Hist [z]Cfg [q]Quit",
     " [1-9] Views [z] Settings [q] Quit",
     " [q] Quit",
