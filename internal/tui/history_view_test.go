@@ -9,14 +9,24 @@ import (
     "github.com/Accelerator6666/xraytop/internal/history"
 )
 
-func TestHistoryTrendMissingVsZero(t *testing.T) {
-    now:=time.Unix(6000*60,0)
-    points:=[]history.Point{{Minute:5997,TCP:0},{Minute:5998,TCP:4},{Minute:6000,TCP:0}}
-    got:=historyTrend(points,now,5,5,"tcp")
-    if !strings.HasPrefix(got,"·") || !strings.Contains(got,"█") || !strings.Contains(got,"▁") {
-        t.Fatalf("missing gaps and observed zero are not distinct: %s",got)
-    }
+func TestBtopTimelineMissingZeroAndLowCounts(t *testing.T) {
+ now:=time.Unix(6000*60,0)
+ points:=[]history.Point{{Minute:5997,TCP:0},{Minute:5998,TCP:2},{Minute:6000,TCP:2}}
+ got:=btopTimeline(points,now,5,5,"tcp",16)
+ if got!="[ .: :]" {t.Fatalf("expected gap, observed zero and low count not full bars, got %q",got)}
+ if strings.Contains(got,"@"){t.Fatalf("two steady sockets must not appear saturated: %s",got)}
 }
+func TestBtopFixedScalesAndGauges(t *testing.T){
+ for _,tc:=range []struct{kind string;value,expected int}{
+  {"tcp",2,16},{"tcp",16,16},{"tcp",17,32},
+  {"xray",2,32},{"http",80,128},
+ }{
+    if got:=btopScale(tc.kind,tc.value);got!=tc.expected{t.Errorf("%s %d => %d, want %d",tc.kind,tc.value,got,tc.expected)}
+ }
+ if got:=btopGauge(2,16,16);got!="[||--------------]"{t.Fatalf("2/16 gauge: %q",got)}
+ if got:=btopGauge(0,16,16);got!="[----------------]"{t.Fatalf("zero gauge: %q",got)}
+}
+
 func TestHistoryViewListAndDetails(t *testing.T) {
     now:=time.Unix(6000*60,0)
     snap:=collector.Snapshot{At:now,IPHistory:[]history.Summary{
@@ -28,12 +38,12 @@ func TestHistoryViewListAndDetails(t *testing.T) {
     s:=Screen{Snapshot:snap,Width:160,Height:35,View:8,HistoryWindow:15}
     plain:=s.Paint()
     if strings.Contains(plain,"100-10") || !strings.Contains(plain,"01-0") {t.Fatalf("history must show valid MM-DD, got: %s",plain)}
-    for _,k:=range []string{"IP HISTORY","192.0.2.1","198.51.100.2","TCP trend","[Enter]","Quit"} {
+    for _,k:=range []string{"IP HISTORY","192.0.2.1","198.51.100.2","TCP 0-32","[Enter]","Quit"} {
         if !strings.Contains(plain,k) {t.Fatalf("missing %s: %s",k,plain)}
     }
     s.HistoryDetail=true
     detail:=s.Paint()
-    for _,k:=range []string{"SOURCE IP DETAIL: 192.0.2.1","TCP   ","XRAY  ","HTTP  ","5-minute rolling"} {
+    for _,k:=range []string{"SOURCE IP DETAIL: 192.0.2.1"," TCP  ["," XRAY ["," HTTP [","rolling five-minute"} {
         if !strings.Contains(detail,k) {t.Fatalf("missing %s: %s",k,detail)}
     }
     s.HistoryDetail=false;s.HistorySort="peak"
@@ -71,7 +81,7 @@ func TestHistoryResponsiveSSHWidths(t *testing.T) {
     if width>=68 && !strings.Contains(out,"  2   15    7   11") {
       t.Errorf("width %d lost count columns: %s",width,out)
     }
-    if width==80 && !strings.Contains(out,"Trend") {t.Errorf("80-col trend header lost: %s",out)}
+    if width==80 && !strings.Contains(out,"TCP/") {t.Errorf("80-col trend scale header lost: %s",out)}
  }
 }
 func TestHistoryFilteredEmptyAndIPv6Detail(t *testing.T){
@@ -86,7 +96,8 @@ func TestHistoryFilteredEmptyAndIPv6Detail(t *testing.T){
  if !strings.Contains(out,"SOURCE IP DETAIL: 2001:db8:abcd:abcd:abcd:abcd:abcd:abcd"){t.Fatal(out)}
 }
 
-func TestHistoryPlainSparklineAcrossTerminalFonts(t *testing.T){
+
+func TestBtopHistoryPanelAndColorFallback(t *testing.T){
  now:=time.Unix(6000*60,0)
  points:=[]history.Point{
   {Minute:5997,TCP:0},
@@ -94,22 +105,38 @@ func TestHistoryPlainSparklineAcrossTerminalFonts(t *testing.T){
   {Minute:5999,TCP:4},
   {Minute:6000,TCP:8},
  }
- got:=historyTrendPlain(points,now,5,5,"tcp")
- if got!="._:=@"{
-  t.Fatalf("expected missing / zero / low / mid / max markers, got %q",got)
- }
- for _,r:=range got{
-  if r>127{t.Fatalf("non-ASCII glyph %q",r)}
- }
+ got:=btopTimeline(points,now,5,5,"tcp",16)
+ if got!="[ .:=+]" {t.Fatalf("btop timeline unknown/zero/low/mid/high: %q",got)}
+ for _,r:=range got{if r>127{t.Fatalf("non-ASCII history data glyph %q",r)}}
  screen:=Screen{
   Width:140,Height:25,View:8,Snapshot:collector.Snapshot{
    At:now,IPHistory:[]history.Summary{{
-     IP:"192.0.2.1",LastSeen:now,Points:points,
+     IP:"192.0.2.1",LastSeen:now,CurrentTCP:8,PeakTCP:8,Points:points,
    }},
   },
  }
  out:=screen.Paint()
- if !strings.Contains(out,"Trend: . missing")||!strings.Contains(out,"._:=@"){
-  t.Fatalf("plain history sparkline or legend missing: %s",out)
+ if !strings.Contains(out,"[ .:=+]")||!strings.Contains(out,"TCP 0-16")||
+    !strings.Contains(out,"Timeline: space missing"){
+  t.Fatalf("btop history timeline / scale / legend missing: %s",out)
+ }
+ screen.HistoryDetail=true
+ detail:=screen.Paint()
+ if !strings.Contains(detail,"[||||||||") || !strings.Contains(detail,"8/16"){
+  t.Fatalf("btop meter with correct absolute count missing: %s",detail)
+ }
+ screen.Color=true
+ colored:=screen.Paint()
+ if !strings.Contains(colored,"\x1b[48;5;")||!strings.Contains(colored,"8/16") {
+  t.Fatalf("ANSI backgrounds or value missing: %s",colored)
+ }
+}
+func TestBtopTimelineDownsampleAndMissing(t *testing.T){
+ now:=time.Unix(6000*60,0)
+ points:=[]history.Point{{Minute:5993,TCP:0},{Minute:6000,TCP:2}}
+ trend:=btopTimeline(points,now,60,15,"tcp",16)
+ if len(trend)!=17 {t.Fatalf("unexpected downsampled trend width: %q",trend)}
+ if !strings.Contains(trend,".") || !strings.Contains(trend,":") {
+    t.Fatalf("should preserve missing/zero/positive: %q",trend)
  }
 }

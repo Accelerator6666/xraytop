@@ -4,7 +4,7 @@
 
 **XrayTop** is a Linux-only, read-only terminal monitor for a **local Xray-core process**, with btop-inspired terminal views and protocol-aware inbound/outbound statistics. It supports mixed VLESS, VMess, Trojan, etc. configurations over WebSocket, gRPC, XHTTP, RAW/TCP, HTTPUpgrade, mKCP and more, including Unix-domain socket listeners behind nginx.
 
-> **v0.12.3-dev preview:** multi-protocol config discovery, process CPU/RSS, tagged inbound/outbound traffic, protocol and transport traffic aggregation, and terminal charts are implemented. Native gRPC API access and authenticated per-user session tracking are not implemented; optional NGINX access-log correlation and IP-first evidence tiers are available, but are not proof of authenticated sessions.
+> **v0.12.4-dev preview:** multi-protocol config discovery, process CPU/RSS, tagged inbound/outbound traffic, protocol and transport traffic aggregation, and terminal charts are implemented. Native gRPC API access and authenticated per-user session tracking are not implemented; optional NGINX access-log correlation and IP-first evidence tiers are available, but are not proof of authenticated sessions.
 
 ## How monitoring works
 
@@ -13,7 +13,7 @@ XrayTop reads **proxy protocol**, **transport method**, **security layer**, **li
 The StatsService API happens to use gRPC for **management**, independent of how clients connect to the Xray server: WebSocket, XHTTP, RAW, gRPC or any other transport can be monitored with this same API. Protocol and transport groupings are two *alternative* summaries of **inbound** counters. Do not add them or inbound and outbound totals together.
 
 
-## Installation, upgrades, and StatsService setup (v0.12.3-dev)
+## Installation, upgrades, and StatsService setup (v0.12.4-dev)
 
 ### 1. Prerequisites
 
@@ -23,11 +23,11 @@ Use a Linux host with systemd (e.g. Debian/Ubuntu), AMD64 or ARM64, with Xray an
 
 ### 2. First-time installation (recommended)
 
-Download the pinned [v0.12.3-dev release](https://github.com/Accelerator6666/xraytop/releases/tag/v0.12.3-dev), review the script, and run:
+Download the pinned [v0.12.4-dev release](https://github.com/Accelerator6666/xraytop/releases/tag/v0.12.4-dev), review the script, and run:
 
 ```bash
 curl -fL --retry 3 -o install-xraytop.sh \
-  https://github.com/Accelerator6666/xraytop/releases/download/v0.12.3-dev/install.sh
+  https://github.com/Accelerator6666/xraytop/releases/download/v0.12.4-dev/install.sh
 
 less install-xraytop.sh
 sudo bash install-xraytop.sh
@@ -36,7 +36,7 @@ sudo bash install-xraytop.sh
 After reviewing and trusting the script, an unattended one-liner is possible (less secure than reviewing a downloaded script first):
 
 ```bash
-curl -fsSL https://github.com/Accelerator6666/xraytop/releases/download/v0.12.3-dev/install.sh | sudo bash
+curl -fsSL https://github.com/Accelerator6666/xraytop/releases/download/v0.12.4-dev/install.sh | sudo bash
 ```
 
 The installer selects AMD64/ARM64, fetches XrayTop, the systemd unit and SHA256SUMS from the **same release**, verifies binary/unit SHA256 and binary version, installs `/usr/local/bin/xraytop` and `xraytop-collector.service`, and checks for a fresh background snapshot. Existing binaries and unit files are backed up under `/var/lib/xraytop/backups/`; `/var/lib/xraytop/ip-history.json` is preserved. Normal install/upgrade only restarts the Collector.
@@ -98,7 +98,7 @@ sudo jq '{
 To upgrade from `v0.11.2-dev` or another older version, download the current release installer again and run it normally; uninstalling first or reconfiguring an existing StatsService is unnecessary. Custom installations can set:
 
 ```bash
-sudo env XRAYTOP_VERSION=v0.12.3-dev \
+sudo env XRAYTOP_VERSION=v0.12.4-dev \
   XRAYTOP_CONFIG=/usr/local/etc/xray/config.json \
   XRAYTOP_XRAY_BIN=/usr/local/bin/xray \
   XRAYTOP_API=127.0.0.1:10085 \
@@ -287,7 +287,7 @@ collector `SupplementaryGroups=adm` instead of broad DAC override capabilities.
 
 ## v0.12: incremental readers, Doctor, source-IP search
 
-**v0.12.3-dev** adds bounded **in-process incremental** ingestion:
+**v0.12.4-dev** adds bounded **in-process incremental** ingestion:
 NGINX access.log is followed by inode/offset and new appended lines are parsed
 into only IP/inbound/status metadata (no raw URLs or headers retained). The
 Xray journal reader follows JSON `__CURSOR` entries instead of rescanning the
@@ -381,4 +381,26 @@ actual usable terminal width; it never clips the `[q] Quit` shortcut or shows
 a cut-off `[q]...`. The terminal settings screen has width-aware shortcuts as
 well. This is strictly a TUI rendering change; the collector, snapshots,
 history storage and Xray/NGINX services are unchanged.
+
+
+## v0.12.4: btop-inspired activity meters and histories
+
+View 9 now displays btop-inspired segmented bars and colorized minute cells,
+but keeps an SSH-safe plain ASCII representation. **Every source IP shares an
+absolute TCP reference scale** (at least 16 sockets, increasing to 32, 64,
+128, etc. when necessary). A constant 2-socket connection count no longer
+looks like an always-saturated 100% load.
+
+The bordered history strip runs from old to new. `t` cycles 5/15/30/60-minute
+windows, with maximum observed value per bucket when downsampled. A blank
+slot means **no sample**; `.` means **sampled zero**; `: = + # @` show increasing
+intensity against the displayed scale. Select an IP with `j/k` and Enter
+to view per-metric TCP, XRAY and HTTP segmented meters and time strips labelled
+with an explicit `value/scale` (such as `2/16`). XRAY and HTTP represent
+rolling five-minute observations, **not** authenticated online users,
+bandwidth or cumulative distinct requests.
+
+In color mode, ANSI 256-color background cells are emitted *after* width
+clipping; `--no-color` displays plain `[||----]` and `[ .:=+#@]` equivalents.
+Only the TUI renderer changes; the collector and existing history remain intact.
 

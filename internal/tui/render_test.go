@@ -137,3 +137,15 @@ func TestSettingsFooterAlwaysFits(t *testing.T){
    }
  }
 }
+
+func TestBtopColorizerPreservesKeyboardShortcuts(t *testing.T){
+ src:=" 192.0.2.1 [|---] [ .:=+#@] [j/k] [Enter]"
+ colored:=colorizeBtopMeters(src)
+ if strings.Contains(colored,"\x1b[") && !strings.Contains(colored,"[j/k] [Enter]"){
+  t.Fatalf("colored output corrupted unrelated shortcuts: %q",colored)
+ }
+ if !strings.Contains(colored,"\x1b[48;5;") {
+  t.Fatalf("segmented meter not colored: %q",colored)
+ }
+ if colorizeBtopMeters("no meters")!="no meters" {t.Fatal("rewrote unrelated text")}
+}

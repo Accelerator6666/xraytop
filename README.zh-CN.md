@@ -4,7 +4,7 @@
 
 **XrayTop** 是一个用于 **Linux 本机 Xray-core** 的只读终端监控程序，支持按**代理协议**和**传输方式**独立查看统计信息。适合同时运行 VLESS + gRPC、VLESS + WebSocket、VLESS + XHTTP、VMess、Trojan 等入站的服务器；可识别 NGINX 反代后连接 Xray 的 Unix Socket 监听路径。
 
-> **v0.12.3-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
+> **v0.12.4-dev 开发预览版。** 已完成多协议配置识别与关联、终端界面、进程 CPU/RSS、按入站/出站标签统计、协议和传输汇总。暂未实现原生 gRPC 客户端或每条 TCP 会话的精细流量归属。**无需修改现有代理入站协议**。
 
 ## 工作原理
 
@@ -16,7 +16,7 @@
 匹配不到的标签仍会展示为 `Unknown`，绝不根据名称（例如 `grpc-01`）臆测协议。配置存在但没有统计计数器时显示 `-`，不当作 0 B。聚合总流量只计算入站统计，避免入站与出站重复计算。协议汇总和传输汇总是同一流量的两种分类，不能彼此相加。
 
 
-## 安装、升级与 StatsService 配置（v0.12.3-dev）
+## 安装、升级与 StatsService 配置（v0.12.4-dev）
 
 ### 1. 安装前准备
 
@@ -26,11 +26,11 @@
 
 ### 2. 首次安装（推荐）
 
-从固定版本 [v0.12.3-dev Release](https://github.com/Accelerator6666/xraytop/releases/tag/v0.12.3-dev) 下载安装脚本，先阅读再运行：
+从固定版本 [v0.12.4-dev Release](https://github.com/Accelerator6666/xraytop/releases/tag/v0.12.4-dev) 下载安装脚本，先阅读再运行：
 
 ```bash
 curl -fL --retry 3 -o install-xraytop.sh \
-  https://github.com/Accelerator6666/xraytop/releases/download/v0.12.3-dev/install.sh
+  https://github.com/Accelerator6666/xraytop/releases/download/v0.12.4-dev/install.sh
 
 less install-xraytop.sh
 sudo bash install-xraytop.sh
@@ -39,7 +39,7 @@ sudo bash install-xraytop.sh
 已经审核并信任安装脚本时，也可一行安装（直接执行远程脚本的安全性低于先下载审核）：
 
 ```bash
-curl -fsSL https://github.com/Accelerator6666/xraytop/releases/download/v0.12.3-dev/install.sh | sudo bash
+curl -fsSL https://github.com/Accelerator6666/xraytop/releases/download/v0.12.4-dev/install.sh | sudo bash
 ```
 
 安装器会自动识别 AMD64/ARM64，从同一 Release 下载 XrayTop、systemd 服务文件和 SHA256SUMS，验证二进制及服务文件校验和与版本，部署 `/usr/local/bin/xraytop` 和 `xraytop-collector.service`，并检查后台快照是否刷新。原程序与服务文件备份在 `/var/lib/xraytop/backups/`；现有 `/var/lib/xraytop/ip-history.json` 不会被覆盖。日常安装/升级只重启 Collector。
@@ -110,7 +110,7 @@ sudo jq '{
 升级 `v0.11.2-dev` 或其他旧版本时，只需再次下载当前 Release 的 `install.sh` 并运行普通安装命令；保留历史记录，不需要先卸载，也不需要重设已有 StatsService。特殊安装路径可通过以下参数指定：
 
 ```bash
-sudo env XRAYTOP_VERSION=v0.12.3-dev \
+sudo env XRAYTOP_VERSION=v0.12.4-dev \
   XRAYTOP_CONFIG=/usr/local/etc/xray/config.json \
   XRAYTOP_XRAY_BIN=/usr/local/bin/xray \
   XRAYTOP_API=127.0.0.1:10085 \
@@ -377,7 +377,7 @@ systemctl status xraytop-collector --no-pager
 
 ## v0.12：增量采集、Doctor 自检与来源 IP 搜索
 
-**v0.12.3-dev** 对高流量 VPS 的数据采集作了重要改进：
+**v0.12.4-dev** 对高流量 VPS 的数据采集作了重要改进：
 
 - **NGINX access.log**：在采集进程中记录文件 inode 和偏移量，仅增量读取新内容；冷启动从最后最多 2 MiB 初始化。仅保留最近 5 分钟的来源 IP／入站／HTTP 状态元数据，不保存 URL、查询参数或原始日志。轮转、截断和处理限额可能导致窗口不完整，界面会明确提示。
 - **Xray journal**：使用 `journalctl --output=json` 与 `__CURSOR` 逐批读取新记录，避免每次重复查询最近 500 条；每批有大小和行数上限。
@@ -447,4 +447,17 @@ stty size
 - 底部快捷键菜单不再被固定长度硬截断，而是根据终端的实际内容宽度，在完整、中等、紧凑和极窄菜单之间选择。优先保留 `[q] Quit` 和 `[z] Settings`，避免原先在 140 列窗口尾部出现 `[q]...`。
 - 宽度适配同样作用于 `z` 终端设置页；测试覆盖多档宽度和趋势图中的缺失/零/有值数据。
 - 这属于**纯显示修复**：不会改变 Collector、已有历史 JSON、日志采集方式、Xray 或 NGINX。
+
+
+## v0.12.4：btop 风格来源 IP 趋势仪表
+
+第 9 页采用 btop 风格的**分段色块**显示，同时保留普通 SSH 环境可读的 ASCII 图形。
+
+- **统一 TCP 刻度**：同一页面上所有 IP 使用相同刻度，至少为 16 条连接，峰值较高时提升至 32、64、128……。持续 2 条 TCP 连接不会再显示成整排最高强度。
+- **分钟时间轴**：趋势图有边框，由左至右表示过去到现在。按 `t` 切换 5/15/30/60 分钟窗口；空间不足时按时间段取最大观测值。空格表示**没有采样**，`.` 为**采样值为零**，`: = + # @` 为在当前刻度下从低到高的强度。
+- **IP 详情**：第 9 页用 `j/k` 选择 IP，按 `Enter` 查看 TCP、XRAY 和 HTTP 三组分段仪表（例如 `2/16`）及各自分钟趋势。TCP 是观测到的网络连接数量；XRAY、HTTP 是**最近五分钟滚动事件数**，不是认证在线人数、累计请求数或精确的每 IP 字节流量。
+- **显示兼容**：彩色模式在确定宽度和裁剪之后再绘制 ANSI 背景色块，避免颜色控制符影响列对齐；`--no-color` / ASCII 模式显示 `[||----]`、`[ .:=+#@]` 等纯文本标记。
+- **升级安全**：本次只修改 TUI 绘制逻辑，不修改采集器、现有 24 小时 IP 历史 JSON、Xray 和 NGINX 配置。
+
+彩色条的强度相对于明确显示的刻度（如 `TCP 0-16`），**不是 CPU 使用百分比**；缺失采样不能推断为没有连接。
 

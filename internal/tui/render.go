@@ -250,6 +250,11 @@ func (s Screen) Paint() string {
 	footer:=footerForWidth(inner,s.View==9)
 
 	add(footer)
+	// Tint btop-style meter cells only after all truncation/padding, so ANSI
+	// escapes never count toward terminal column widths.
+	if s.Color && s.View==8 {
+		for i:=range lines {lines[i]=colorizeBtopMeters(lines[i])}
+	}
 	var out string
 	if s.Color {
 		out="\x1b[H"+strings.Join(lines,"\x1b[K\r\n")+"\x1b[J"
@@ -433,4 +438,46 @@ func footerForWidth(width int,settings bool)string {
    if utf8.RuneCountInString(item)<=width {return item}
  }
  return options[len(options)-1]
+}
+
+
+// colorizeBtopMeters paints only history meters [|--...] and timelines
+// [ ::++... ] with ANSI 256-color backgrounds. The *content* is ASCII and
+// remains meaningful for --no-color/--tui-ascii. This runs after clipping:
+// terminal escape sequences therefore cannot corrupt the width calculation.
+func colorizeBtopMeters(line string)string{
+ var b strings.Builder
+ for len(line)>0{
+    start:=strings.IndexByte(line,'[')
+    if start<0 {b.WriteString(line);break}
+    b.WriteString(line[:start])
+    line=line[start:]
+    end:=strings.IndexByte(line,']')
+    if end<0{b.WriteString(line);break}
+    content:=line[1:end]
+    valid:=len(content)>=4 && len(content)<=60
+    if valid{
+       for i:=0;i<len(content);i++ {
+         if !strings.ContainsRune("|-.:=+#@ ",rune(content[i])){valid=false;break}
+       }
+    }
+    if !valid{b.WriteByte('[');line=line[1:];continue}
+    b.WriteByte('[')
+    for i:=0;i<len(content);i++{
+      switch content[i]{
+      case '|':b.WriteString("\x1b[48;5;43m \x1b[0m") // bright cyan/teal segment
+      case ':':b.WriteString("\x1b[48;5;30m \x1b[0m") // low activity
+      case '=':b.WriteString("\x1b[48;5;35m \x1b[0m")
+      case '+':b.WriteString("\x1b[48;5;70m \x1b[0m")
+      case '#':b.WriteString("\x1b[48;5;220m \x1b[0m")
+      case '@':b.WriteString("\x1b[48;5;203m \x1b[0m")
+      case '-':b.WriteString("\x1b[38;5;241m-\x1b[0m")
+      case '.':b.WriteString("\x1b[38;5;241m.\x1b[0m")
+      case ' ':b.WriteByte(' ')
+      }
+    }
+    b.WriteByte(']')
+    line=line[end+1:]
+ }
+ return b.String()
 }
