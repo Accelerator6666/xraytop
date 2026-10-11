@@ -111,8 +111,7 @@ func Run(ctx context.Context,opt Options) Report {
  // Provide the local data directory explicitly, never list IP addresses.
  dir:=filepath.Dir(opt.SnapshotFile)
  if fi,err:=os.Stat(dir);err==nil && fi.IsDir() {
-   if fi.Mode().Perm()&0007!=0 {r.add("State directory","WARN","directory has permissions for others")}
-   else {r.add("State directory","PASS",dir)}
+   if fi.Mode().Perm()&0007!=0 {r.add("State directory","WARN","directory has permissions for others")} else {r.add("State directory","PASS",dir)}
  }else {r.add("State directory","WARN",dir+" unavailable")}
  return r
 }
