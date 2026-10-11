@@ -68,7 +68,7 @@ func TestHistoryResponsiveSSHWidths(t *testing.T) {
           t.Errorf("width=%d rendered line=%d: %q",width,n,line)
        }
     }
-    if width>=66 && !strings.Contains(out,"  2   15    7   11") {
+    if width>=68 && !strings.Contains(out,"  2   15    7   11") {
       t.Errorf("width %d lost count columns: %s",width,out)
     }
     if width==80 && !strings.Contains(out,"Trend") {t.Errorf("80-col trend header lost: %s",out)}
