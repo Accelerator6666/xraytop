@@ -45,13 +45,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v0.12.4-dev"
+          TAG="v0.12.5-dev"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/xraytop-linux-amd64 dist/xraytop-linux-arm64 dist/install.sh dist/setup-stats.sh dist/xraytop-collector.service dist/SHA256SUMS --clobber
           else
             gh release create "$TAG" dist/xraytop-linux-amd64 dist/xraytop-linux-arm64 dist/install.sh dist/setup-stats.sh dist/xraytop-collector.service dist/SHA256SUMS \
               --target "$GITHUB_SHA" \
-              --title "XrayTop v0.12.4-dev" \
-              --notes "btop-inspired segmented meters and colorized source-IP activity timelines with absolute scales, and SSH-safe ASCII fallback." \
+              --title "XrayTop v0.12.5-dev" \
+              --notes "Restore Home TRAFFIC-style slender IP-history sparklines without segmented gauges, retaining consistent scale, 80-column responsiveness and ASCII fallback." \
               --prerelease
           fi
